@@ -215,24 +215,29 @@ and then taper off.
 ## Project layout
 
 ```
-RollerGraph.sln
+RollerGraph.slnx
 ├── src/
 │   ├── RollerGraph.Core/          # No UI deps - pure, testable
+│   │   ├── Adjustments/           # ChannelAdjustment, SampleAdjuster, ExpressionCompiler
+│   │   ├── Logging/               # CsvSessionLogger
 │   │   ├── Models/                # Sample, SavedRun, Settings, SettingsStore
 │   │   ├── Parsing/               # CsvLineParser
-│   │   ├── Serial/                # ISerialSource, RjcpSerialSource, ReplaySerialSource, LineBuffer
+│   │   ├── Pipeline/              # SamplePipeline (parse + adjust + filter + smooth)
 │   │   ├── Scaling/               # NiceNumber
+│   │   ├── Serial/                # ISerialSource, RjcpSerialSource, ReplaySerialSource, LineBuffer
 │   │   ├── Smoothing/             # RollingAverage, SampleSmoother
-│   │   ├── Adjustments/           # ChannelAdjustment, SampleAdjuster, ExpressionParser
-│   │   ├── Storage/               # SavedRunStore, RunColorPalette
-│   │   └── Logging/               # CsvSessionLogger
+│   │   └── Storage/               # AppDataPaths, FileSavedRunStore, RunColorPalette, RunSlugger
 │   └── RollerGraph.App/           # Avalonia 12 app
-│       ├── ViewModels/            # MainWindowViewModel, ChartViewModel, SettingsViewModel,
-│       │                          # SavedRunViewModel, ChannelAdjustmentViewModel, converters
-│       ├── Views/                 # MainWindow, SettingsWindow, RunNameDialog, ConfirmDialog
-│       └── Services/              # IUiDispatcher, IMainWindowInteractor
+│       ├── Charting/              # LiveChartsChartRenderer + snapshotter
+│       ├── Connection/            # ConnectionController (lifecycle of one serial / replay session)
+│       ├── Printing/              # IPrintLauncher + PlatformPrintLauncher
+│       ├── Services/              # IUiDispatcher, ICsvFilePicker, IChartPrinter, ...
+│       ├── ViewModels/            # MainWindowViewModel, ChartViewModel, SavedRunsViewModel,
+│       │                          # SettingsViewModel, SavedRunViewModel, converters
+│       └── Views/                 # MainWindow, SettingsWindow, RunNameDialog, ConfirmDialog
 └── tests/
-    └── RollerGraph.Core.Tests/    # xUnit + Shouldly
+    ├── RollerGraph.Core.Tests/    # xUnit + Shouldly - Core library coverage
+    └── RollerGraph.App.Tests/     # xUnit + Shouldly - VM / coordinator coverage
 ```
 
 ## Tech stack

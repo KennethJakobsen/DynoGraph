@@ -1,12 +1,13 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using RollerGraph.Core.Storage;
 
 namespace RollerGraph.Core.Models;
 
 /// <summary>
 /// Loads and persists <see cref="Settings"/> as JSON in a per-OS app data folder.
 /// </summary>
-public sealed class SettingsStore
+public sealed class SettingsStore : ISettingsStore
 {
     private static readonly JsonSerializerOptions Options = new()
     {
@@ -31,13 +32,7 @@ public sealed class SettingsStore
     /// Returns the OS-appropriate default settings file path:
     ///   {LocalAppData}/RollerGraph/settings.json
     /// </summary>
-    public static string DefaultFilePath()
-    {
-        var appData = Environment.GetFolderPath(
-            Environment.SpecialFolder.LocalApplicationData,
-            Environment.SpecialFolderOption.Create);
-        return Path.Combine(appData, "RollerGraph", "settings.json");
-    }
+    public static string DefaultFilePath() => AppDataPaths.SettingsFilePath();
 
     /// <summary>
     /// Returns the default-located store.

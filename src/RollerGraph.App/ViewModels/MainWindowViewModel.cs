@@ -1,60 +1,93 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RollerGraph.App.Connection;
 using RollerGraph.App.Services;
 using RollerGraph.Core.Adjustments;
 using RollerGraph.Core.Logging;
 using RollerGraph.Core.Models;
-using RollerGraph.Core.Parsing;
 using RollerGraph.Core.Serial;
-using RollerGraph.Core.Smoothing;
 using RollerGraph.Core.Storage;
 
 namespace RollerGraph.App.ViewModels;
 
 /// <summary>
-/// Top-level view-model for the main window. Owns the serial source,
-/// the CSV logger, and the chart view-model. Coordinates the connect /
-/// disconnect / reset / replay lifecycle.
+/// Top-level view-model for the main window. Acts as a thin coordinator
+/// between three focused collaborators:
+///
+///   - <see cref="ConnectionController"/> owns the serial / replay lifecycle
+///     and produces accepted samples + status events.
+///   - <see cref="ChartViewModel"/> owns the chart's observable state.
+///   - <see cref="SavedRunsViewModel"/> owns the saved-runs collection and
+///     all CRUD operations against the on-disk store.
+///
+/// This class is responsible for: top-level commands, port enumeration, the
+/// observable surface the window binds to (status, IsConnected, etc.), and
+/// pushing settings changes down to the collaborators.
 /// </summary>
 public sealed partial class MainWindowViewModel : ObservableObject
 {
-    private readonly IUiDispatcher _dispatcher;
-    private readonly CsvSessionLogger _logger;
-    private readonly SettingsStore? _settingsStore;
-    private readonly SavedRunStore _runStore;
+    private readonly IPortEnumerator _portEnumerator;
+    private readonly ISettingsStore? _settingsStore;
+    private readonly ConnectionController _connection;
     private readonly List<Sample> _liveSamples = new();
-    private ISerialSource? _source;
-    private SampleSmoother? _smoother;
-    private SampleAdjuster _adjuster;
 
-    public MainWindowViewModel(IUiDispatcher dispatcher, Settings? settings = null, SettingsStore? settingsStore = null, SavedRunStore? runStore = null)
+    public MainWindowViewModel(
+        IUiDispatcher dispatcher,
+        Settings? settings = null,
+        ISettingsStore? settingsStore = null,
+        ISavedRunStore? runStore = null,
+        ISessionLogger? logger = null,
+        IPortEnumerator? portEnumerator = null,
+        ISerialSourceFactory? sourceFactory = null)
     {
-        _dispatcher = dispatcher;
+        ArgumentNullException.ThrowIfNull(dispatcher);
+
         _settingsStore = settingsStore;
-        _runStore = runStore ?? SavedRunStore.Default();
         Settings = settings ?? settingsStore?.Load() ?? new Settings();
+
+        // Default the two serial seams from a single concrete factory.
+        var defaultFactory = new RjcpSerialSourceFactory();
+        _portEnumerator = portEnumerator ?? defaultFactory;
+        var factory = sourceFactory ?? defaultFactory;
+
+        var sessionLogger = logger ?? new CsvSessionLogger(CsvSessionLogger.DefaultLogDirectory());
+        var savedRunStore = runStore ?? FileSavedRunStore.Default();
+
         Chart = new ChartViewModel(Settings);
-        _logger = new CsvSessionLogger(CsvSessionLogger.DefaultLogDirectory());
-        _adjuster = BuildAdjuster(Settings);
+        SavedRuns = new SavedRunsViewModel(savedRunStore, Chart, () => _liveSamples)
+        {
+            StatusReporter = msg => StatusMessage = msg,
+        };
+
+        _connection = new ConnectionController(dispatcher, factory, sessionLogger);
+        _connection.ApplySettings(Settings, SampleAdjuster.FromSettingsOrIdentity(Settings), smoothingEnabled: false);
+        _connection.SampleAccepted += OnSampleAccepted;
+        _connection.BadLineReceived += OnBadLineReceived;
+        _connection.ErrorOccurred += OnConnectionError;
+
         AvailablePorts = new ObservableCollection<string>();
-        SavedRuns = new ObservableCollection<SavedRunViewModel>();
         RefreshPorts();
         if (!string.IsNullOrWhiteSpace(Settings.LastPortName) && AvailablePorts.Contains(Settings.LastPortName))
             SelectedPort = Settings.LastPortName;
         else if (AvailablePorts.Count > 0)
             SelectedPort = AvailablePorts[0];
-        LoadSavedRunsFromDisk();
+        SavedRuns.LoadAllFromDisk();
     }
 
     public Settings Settings { get; private set; }
     public ChartViewModel Chart { get; }
+    public SavedRunsViewModel SavedRuns { get; }
 
     public ObservableCollection<string> AvailablePorts { get; }
-    public ObservableCollection<SavedRunViewModel> SavedRuns { get; }
 
-    /// <summary>Hook set by the View to provide file pickers, dialogs, printing.</summary>
-    public IMainWindowInteractor? Interactor { get; set; }
+    // Property-injected view services. Each one is a small ISP-friendly interface.
+    public ICsvFilePicker? FilePicker { get; set; }
+    public IRunNamePrompt? RunNamePrompt { get; set; }
+    public IConfirmPrompt? ConfirmPrompt { get; set; }
+    public ISettingsDialog? SettingsDialog { get; set; }
+    public IChartExporter? ChartExporter { get; set; }
+    public IChartPrinter? ChartPrinter { get; set; }
 
     [ObservableProperty]
     private string? _selectedPort;
@@ -74,10 +107,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private string? _logFilePath;
 
+    // ---- Commands ----
+
     [RelayCommand]
     private void RefreshPorts()
     {
-        var ports = RjcpSerialSource.EnumeratePorts();
+        var ports = _portEnumerator.EnumeratePorts();
         AvailablePorts.Clear();
         foreach (var p in ports.OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
             AvailablePorts.Add(p);
@@ -93,13 +128,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         try
         {
-            var src = new RjcpSerialSource(SelectedPort, Settings.BaudRate);
-            AttachSource(src);
-            await src.StartAsync();
-            LogFilePath = _logger.BeginSession();
+            StatusMessage = await _connection.ConnectAsync(SelectedPort, Settings, SmoothingEnabled);
+            LogFilePath = _connection.LogFilePath;
             IsConnected = true;
-            StatusMessage = $"Connected to {SelectedPort} @ {Settings.BaudRate} baud";
-            ResetSmoother();
             PersistLastPort(SelectedPort);
             ConnectCommand.NotifyCanExecuteChanged();
             DisconnectCommand.NotifyCanExecuteChanged();
@@ -107,7 +138,6 @@ public sealed partial class MainWindowViewModel : ObservableObject
         catch (Exception ex)
         {
             StatusMessage = $"Connect failed: {ex.Message}";
-            DetachSource();
         }
     }
 
@@ -116,22 +146,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanDisconnect))]
     private async Task DisconnectAsync()
     {
-        if (_source is null)
-            return;
-        try
-        {
-            await _source.StopAsync();
-        }
-        finally
-        {
-            DetachSource();
-            _logger.EndSession();
-            LogFilePath = null;
-            IsConnected = false;
-            StatusMessage = "Disconnected";
-            ConnectCommand.NotifyCanExecuteChanged();
-            DisconnectCommand.NotifyCanExecuteChanged();
-        }
+        await _connection.DisconnectAsync();
+        LogFilePath = _connection.LogFilePath;
+        IsConnected = _connection.IsConnected;
+        StatusMessage = "Disconnected";
+        ConnectCommand.NotifyCanExecuteChanged();
+        DisconnectCommand.NotifyCanExecuteChanged();
     }
 
     private bool CanDisconnect() => IsConnected;
@@ -142,13 +162,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Chart.Reset();
         BadLineCount = 0;
         _liveSamples.Clear();
-        ResetSmoother();
-        // Start a new log file if currently connected.
-        if (IsConnected)
-        {
-            _logger.EndSession();
-            LogFilePath = _logger.BeginSession();
-        }
+        _connection.ResetSmoother();
+        _connection.StartNewLogSession();
+        LogFilePath = _connection.LogFilePath;
     }
 
     /// <summary>
@@ -156,33 +172,24 @@ public sealed partial class MainWindowViewModel : ObservableObject
     /// </summary>
     public async Task ReplayAsync(string filePath, TimeSpan? interval = null)
     {
-        if (IsConnected)
-            await DisconnectCommand.ExecuteAsync(null);
-
         try
         {
-            var src = ReplaySerialSource.FromFile(filePath, interval);
-            AttachSource(src);
-            await src.StartAsync();
-            // Replay also gets a log file so the parsed stream is captured.
-            LogFilePath = _logger.BeginSession();
+            StatusMessage = await _connection.ReplayAsync(filePath, Settings, SmoothingEnabled, interval);
+            LogFilePath = _connection.LogFilePath;
             IsConnected = true;
-            StatusMessage = $"Replaying {Path.GetFileName(filePath)}";
-            ResetSmoother();
             ConnectCommand.NotifyCanExecuteChanged();
             DisconnectCommand.NotifyCanExecuteChanged();
         }
         catch (Exception ex)
         {
             StatusMessage = $"Replay failed: {ex.Message}";
-            DetachSource();
         }
     }
 
     /// <summary>
     /// Replaces the active settings, persists them (if a store is attached),
     /// applies new axis defaults to the chart (only when no data is plotted yet),
-    /// and rebuilds the smoother with the new window size.
+    /// and rebuilds the pipeline with the new window size and adjustments.
     /// </summary>
     public void ApplySettings(Settings newSettings)
     {
@@ -191,113 +198,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
         var withPort = newSettings with { LastPortName = SelectedPort ?? newSettings.LastPortName };
         Settings = withPort;
         Chart.UpdateDefaults(withPort);
-        _adjuster = BuildAdjuster(withPort);
-        ResetSmoother();
-        try { _settingsStore?.Save(withPort); } catch { /* surface in status later if needed */ }
+        _connection.ApplySettings(withPort, SampleAdjuster.FromSettingsOrIdentity(withPort), SmoothingEnabled);
+        TrySaveSettings(withPort);
     }
 
-    private static SampleAdjuster BuildAdjuster(Settings s)
-    {
-        try
-        {
-            return new SampleAdjuster(s.SpeedAdjustment, s.NmAdjustment, s.HpAdjustment);
-        }
-        catch (ExpressionException)
-        {
-            // Bad expression in saved settings - fall back to identity rather than crashing.
-            return SampleAdjuster.Identity;
-        }
-    }
-
-    private void AttachSource(ISerialSource source)
-    {
-        DetachSource();
-        _source = source;
-        source.LineReceived += OnLineReceived;
-        source.ErrorOccurred += OnErrorOccurred;
-    }
-
-    private void DetachSource()
-    {
-        if (_source is null) return;
-        _source.LineReceived -= OnLineReceived;
-        _source.ErrorOccurred -= OnErrorOccurred;
-        try { _source.Dispose(); } catch { /* ignore */ }
-        _source = null;
-    }
-
-    private void OnLineReceived(object? sender, LineReceivedEventArgs e)
-    {
-        // Log raw line on the background thread (logger is thread-safe).
-        _logger.Append(e.Line, e.ReceivedAt);
-
-        var sample = CsvLineParser.Parse(e.Line, e.ReceivedAt);
-        if (sample is null)
-        {
-            _dispatcher.Post(() => BadLineCount++);
-            return;
-        }
-
-        // Apply per-channel adjustments (factor/offset or expression) before
-        // any downstream filtering so MinSpeed / smoothing operate on the
-        // user-corrected values.
-        var s = _adjuster.Adjust(sample.Value);
-
-        if (s.SpeedKmh < Settings.MinSpeedKmh)
-            return;
-
-        if (SmoothingEnabled && Settings.SmoothingWindow > 1)
-        {
-            _smoother ??= new SampleSmoother(Settings.SmoothingWindow);
-            s = _smoother.Smooth(s);
-        }
-
-        var capturedSample = s;
-        _dispatcher.Post(() =>
-        {
-            _liveSamples.Add(capturedSample);
-            Chart.AppendSample(capturedSample);
-        });
-    }
-
-    private void OnErrorOccurred(object? sender, Exception ex)
-    {
-        _dispatcher.Post(() =>
-        {
-            StatusMessage = $"Error: {ex.Message}";
-            IsConnected = false;
-            DetachSource();
-            _logger.EndSession();
-            LogFilePath = null;
-            ConnectCommand.NotifyCanExecuteChanged();
-            DisconnectCommand.NotifyCanExecuteChanged();
-        });
-    }
-
-    partial void OnSelectedPortChanged(string? value)
-    {
-        ConnectCommand.NotifyCanExecuteChanged();
-        if (!string.IsNullOrWhiteSpace(value)) PersistLastPort(value);
-    }
-
-    partial void OnSmoothingEnabledChanged(bool value)
-    {
-        // Toggling smoothing resets the smoother so the next sample starts a fresh window.
-        ResetSmoother();
-    }
-
-    private void PersistLastPort(string portName)
-    {
-        if (_settingsStore is null) return;
-        if (Settings.LastPortName == portName) return;
-        var updated = Settings with { LastPortName = portName };
-        Settings = updated;
-        try { _settingsStore.Save(updated); } catch { /* ignore */ }
-    }
-
-    private void ResetSmoother() => _smoother = null;
-
-    // -------- Interaction-bridged commands (View provides the UI surface) --------
+    // ---- View-service-bridged commands ----
 
     /// <summary>Cmd/Ctrl+K - connect if disconnected, disconnect if connected.</summary>
     [RelayCommand]
@@ -310,8 +215,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private async Task ReplayCsv()
     {
-        if (Interactor is null) return;
-        var path = await Interactor.PickReplayCsvAsync();
+        if (FilePicker is null) return;
+        var path = await FilePicker.PickReplayCsvAsync();
         if (path is null) return;
         await ReplayAsync(path);
     }
@@ -319,232 +224,134 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private async Task ExportPng()
     {
-        if (Interactor is null) return;
-        await Interactor.ExportPngAsync();
+        if (ChartExporter is null) return;
+        var result = await ChartExporter.ExportPngAsync();
+        StatusMessage = result.Outcome switch
+        {
+            ChartExportOutcome.Saved => $"Exported {Path.GetFileName(result.FilePath)}",
+            ChartExportOutcome.Failed => $"Export failed: {result.ErrorMessage}",
+            _ => StatusMessage,
+        };
     }
 
     [RelayCommand]
     private async Task Print()
     {
-        if (Interactor is null) return;
-        await Interactor.PrintAsync();
+        if (ChartPrinter is null) return;
+        var result = await ChartPrinter.PrintAsync();
+        StatusMessage = result.Outcome == ChartPrintOutcome.Failed
+            ? $"Print failed: {result.ErrorMessage}"
+            : result.StatusMessage;
     }
 
     [RelayCommand]
     private async Task OpenSettings()
     {
-        if (Interactor is null) return;
-        var result = await Interactor.ShowSettingsAsync(Settings);
+        if (SettingsDialog is null) return;
+        var result = await SettingsDialog.ShowSettingsAsync(Settings);
         if (result is not null) ApplySettings(result);
     }
 
     [RelayCommand]
     private async Task LoadSavedRun()
     {
-        if (Interactor is null) return;
-        var path = await Interactor.PickSavedRunCsvAsync();
+        if (FilePicker is null) return;
+        var path = await FilePicker.PickSavedRunCsvAsync();
         if (path is null) return;
-        LoadSavedRunFromFile(path);
+        SavedRuns.LoadFromFile(path);
     }
 
     [RelayCommand]
     private async Task SaveCurrentRun()
     {
-        if (Interactor is null) return;
-        if (!CanSaveCurrentRun)
+        if (RunNamePrompt is null) return;
+        if (!SavedRuns.CanSaveCurrentRun)
         {
             StatusMessage = "Nothing to save - capture some data first.";
             return;
         }
-        var suggested = $"Run {SavedRuns.Count + 1}";
-        var name = await Interactor.AskForRunNameAsync(suggested);
+        var suggested = $"Run {SavedRuns.Items.Count + 1}";
+        var name = await RunNamePrompt.AskForRunNameAsync(suggested);
         if (string.IsNullOrWhiteSpace(name)) return;
-        if (SavedRunExists(name))
+        if (SavedRuns.Exists(name))
         {
-            var ok = await Interactor.ConfirmOverwriteAsync(name);
+            if (ConfirmPrompt is null) return;
+            var ok = await ConfirmPrompt.ConfirmOverwriteAsync(name);
             if (!ok) return;
-            CaptureSavedRun(name, overwrite: true);
+            SavedRuns.CaptureFromLive(name, overwrite: true);
         }
         else
         {
-            CaptureSavedRun(name);
+            SavedRuns.CaptureFromLive(name);
         }
     }
 
-    // -------- Saved Runs --------
+    /// <summary>True when there is current live data that can be saved.</summary>
+    public bool CanSaveCurrentRun => SavedRuns.CanSaveCurrentRun;
 
-    /// <summary>True when there is current data that can be promoted to a saved run.</summary>
-    public bool CanSaveCurrentRun => _liveSamples.Count > 0;
+    // ---- Public passthroughs for the View's code-behind row handlers ----
 
-    private void LoadSavedRunsFromDisk()
-    {
-        SavedRuns.Clear();
-        Chart.ClearSavedRuns();
-        foreach (var run in _runStore.LoadAll())
-        {
-            var vm = new SavedRunViewModel(run);
-            SavedRuns.Add(vm);
-            Chart.AddSavedRun(run);
-        }
-    }
+    public bool SavedRunExists(string name) => SavedRuns.Exists(name);
+    public SavedRunViewModel? CaptureSavedRun(string name, bool overwrite = false) => SavedRuns.CaptureFromLive(name, overwrite);
+    public SavedRunViewModel? LoadSavedRunFromFile(string path) => SavedRuns.LoadFromFile(path);
+    public void DeleteSavedRun(SavedRunViewModel run) => SavedRuns.Delete(run);
+    public bool RenameSavedRun(SavedRunViewModel run, string newName) => SavedRuns.Rename(run, newName);
+    public void ToggleSavedRunVisibility(SavedRunViewModel run) => SavedRuns.ToggleVisibility(run);
 
-    /// <summary>
-    /// Captures the current live data as a new <see cref="SavedRun"/> with the
-    /// given name. Returns the resulting view-model, or null if there is no
-    /// data to save.
-    /// </summary>
-    /// <param name="name">Display name supplied by the user.</param>
-    /// <param name="overwrite">When false and a run with the same slug exists,
-    /// returns null without saving.</param>
-    public SavedRunViewModel? CaptureSavedRun(string name, bool overwrite = false)
-    {
-        if (_liveSamples.Count == 0) return null;
-        var slug = SavedRunStore.Slugify(name);
-        var existing = SavedRuns.FirstOrDefault(r => string.Equals(SavedRunStore.Slugify(r.Name), slug, StringComparison.Ordinal));
-        if (existing is not null && !overwrite)
-            return null;
-
-        var color = RunColorPalette.Pick(SavedRuns.Count);
-        var run = new SavedRun
-        {
-            Name = name,
-            CreatedUtc = DateTime.UtcNow,
-            Color = color,
-            IsVisible = true,
-            Samples = _liveSamples.ToArray(),
-        };
-        _runStore.Save(run);
-
-        if (existing is not null)
-        {
-            existing.Update(run);
-            Chart.AddSavedRun(run); // re-add overwrites
-            StatusMessage = $"Updated saved run \"{name}\"";
-            return existing;
-        }
-
-        var vm = new SavedRunViewModel(run);
-        SavedRuns.Add(vm);
-        Chart.AddSavedRun(run);
-        StatusMessage = $"Saved run \"{name}\"";
-        return vm;
-    }
-
-    /// <summary>Returns true if a saved run with the same slug already exists.</summary>
-    public bool SavedRunExists(string name)
-    {
-        var slug = SavedRunStore.Slugify(name);
-        return SavedRuns.Any(r => string.Equals(SavedRunStore.Slugify(r.Name), slug, StringComparison.Ordinal));
-    }
-
-    /// <summary>
-    /// Loads a CSV file as a new saved run. The file is parsed using the same
-    /// pipeline as Replay (no adjustments applied - they're assumed to already
-    /// reflect the desired calibration of the source file).
-    /// </summary>
-    public SavedRunViewModel? LoadSavedRunFromFile(string filePath)
-    {
-        var samples = new List<Sample>();
-        foreach (var raw in File.ReadAllLines(filePath))
-        {
-            var trimmed = raw.TrimEnd();
-            if (trimmed.Length == 0 || trimmed.StartsWith('#')) continue;
-            // Skip header rows from previously-saved files.
-            if (trimmed.StartsWith("sample_number", StringComparison.OrdinalIgnoreCase)) continue;
-            if (trimmed.StartsWith("timestamp_utc", StringComparison.OrdinalIgnoreCase)) continue;
-
-            // Try the saved-run CSV format first (5+ fields, fields are [n,sp,nm,hp,utc]).
-            var s = TryParseSavedRunLine(trimmed) ?? CsvLineParser.Parse(trimmed, DateTime.UtcNow);
-            if (s is not null) samples.Add(s.Value);
-        }
-        if (samples.Count == 0)
-        {
-            StatusMessage = $"No samples found in {Path.GetFileName(filePath)}";
-            return null;
-        }
-
-        var name = Path.GetFileNameWithoutExtension(filePath);
-        var color = RunColorPalette.Pick(SavedRuns.Count);
-        var run = new SavedRun
-        {
-            Name = name,
-            CreatedUtc = DateTime.UtcNow,
-            Color = color,
-            IsVisible = true,
-            Samples = samples,
-        };
-        _runStore.Save(run);
-
-        var vm = new SavedRunViewModel(run);
-        SavedRuns.Add(vm);
-        Chart.AddSavedRun(run);
-        StatusMessage = $"Loaded {samples.Count} samples as \"{name}\"";
-        return vm;
-    }
-
-    private static Sample? TryParseSavedRunLine(string line)
-    {
-        var parts = line.Split(',');
-        if (parts.Length < 5) return null;
-        if (!int.TryParse(parts[0], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var n)) return null;
-        if (!double.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var sp)) return null;
-        if (!double.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var nm)) return null;
-        if (!double.TryParse(parts[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var hp)) return null;
-        DateTime ra = DateTime.UtcNow;
-        DateTime.TryParse(parts[4], System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out ra);
-        return new Sample(n, sp, nm, hp, ra);
-    }
-
-    /// <summary>Permanently removes a saved run from disk and from the chart.</summary>
-    public void DeleteSavedRun(SavedRunViewModel run)
-    {
-        ArgumentNullException.ThrowIfNull(run);
-        _runStore.Delete(run.Name);
-        Chart.RemoveSavedRun(run.Name);
-        SavedRuns.Remove(run);
-        StatusMessage = $"Deleted run \"{run.Name}\"";
-    }
-
-    /// <summary>
-    /// Renames a saved run. Deletes the old file, writes a new one. Returns
-    /// false if the new name slugs to an existing run that isn't this one.
-    /// </summary>
-    public bool RenameSavedRun(SavedRunViewModel run, string newName)
-    {
-        if (string.IsNullOrWhiteSpace(newName)) return false;
-        var newSlug = SavedRunStore.Slugify(newName);
-        var oldSlug = SavedRunStore.Slugify(run.Name);
-        if (!string.Equals(newSlug, oldSlug, StringComparison.Ordinal))
-        {
-            var clash = SavedRuns.Any(r => r != run && string.Equals(SavedRunStore.Slugify(r.Name), newSlug, StringComparison.Ordinal));
-            if (clash) return false;
-            _runStore.Delete(run.Name);
-        }
-        var renamed = run.Source with { Name = newName };
-        _runStore.Save(renamed);
-        run.Update(renamed);
-        Chart.RemoveSavedRun(run.Name); // chart key is old name - actually we already updated VM
-        // Re-add under the new name.
-        Chart.RemoveSavedRun(renamed.Name);
-        Chart.AddSavedRun(renamed);
-        return true;
-    }
-
-    /// <summary>Pushes a visibility change for a saved run through to disk and chart.</summary>
-    public void ToggleSavedRunVisibility(SavedRunViewModel run)
-    {
-        ArgumentNullException.ThrowIfNull(run);
-        var updated = run.Source with { IsVisible = run.IsVisible };
-        _runStore.Save(updated);
-        run.Update(updated);
-        Chart.SetSavedRunVisible(updated.Name, updated.IsVisible);
-    }
-
-    /// <summary>Removes every saved run from disk and from the chart.</summary>
     [RelayCommand]
-    private void ClearSavedRuns()
+    private void ClearSavedRuns() => SavedRuns.ClearAll();
+
+    // ---- Event handlers wired to ConnectionController ----
+
+    private void OnSampleAccepted(object? sender, SampleAcceptedEventArgs e)
     {
-        foreach (var r in SavedRuns.ToList())
-            DeleteSavedRun(r);
+        _liveSamples.Add(e.Sample);
+        Chart.AppendSample(e.Sample);
+    }
+
+    private void OnBadLineReceived(object? sender, EventArgs e) => BadLineCount++;
+
+    private void OnConnectionError(object? sender, ConnectionErrorEventArgs e)
+    {
+        StatusMessage = $"Error: {e.Error.Message}";
+        IsConnected = false;
+        LogFilePath = null;
+        ConnectCommand.NotifyCanExecuteChanged();
+        DisconnectCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnSelectedPortChanged(string? value)
+    {
+        ConnectCommand.NotifyCanExecuteChanged();
+        if (!string.IsNullOrWhiteSpace(value)) PersistLastPort(value);
+    }
+
+    partial void OnSmoothingEnabledChanged(bool value)
+    {
+        _connection.SmoothingEnabled = value;
+    }
+
+    private void PersistLastPort(string portName)
+    {
+        if (_settingsStore is null) return;
+        if (Settings.LastPortName == portName) return;
+        var updated = Settings with { LastPortName = portName };
+        Settings = updated;
+        TrySaveSettings(updated);
+    }
+
+    private void TrySaveSettings(Settings settings)
+    {
+        if (_settingsStore is null) return;
+        try
+        {
+            _settingsStore.Save(settings);
+        }
+        catch (Exception ex)
+        {
+            // Persistence failures must not crash the app, but the user
+            // should know their changes did not stick.
+            StatusMessage = $"Settings save failed: {ex.Message}";
+        }
     }
 }

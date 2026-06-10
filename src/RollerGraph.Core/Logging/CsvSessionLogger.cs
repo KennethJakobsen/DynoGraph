@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using RollerGraph.Core.Storage;
 
 namespace RollerGraph.Core.Logging;
 
@@ -8,9 +9,10 @@ namespace RollerGraph.Core.Logging;
 /// Each session creates a new file in the form:
 ///   {root}/session-yyyyMMdd-HHmmss.csv
 /// </summary>
-public sealed class CsvSessionLogger : IDisposable
+public sealed class CsvSessionLogger : ISessionLogger
 {
-    private const string Header = "timestamp_utc,raw_line";
+    /// <summary>Column header written by every session file produced by this logger.</summary>
+    public const string Header = "timestamp_utc,raw_line";
 
     private readonly object _lock = new();
     private readonly string _root;
@@ -36,13 +38,7 @@ public sealed class CsvSessionLogger : IDisposable
     /// <summary>
     /// Returns the OS-appropriate default log directory for the app.
     /// </summary>
-    public static string DefaultLogDirectory()
-    {
-        var appData = Environment.GetFolderPath(
-            Environment.SpecialFolder.LocalApplicationData,
-            Environment.SpecialFolderOption.Create);
-        return Path.Combine(appData, "RollerGraph", "logs");
-    }
+    public static string DefaultLogDirectory() => AppDataPaths.LogsDirectory();
 
     /// <summary>
     /// Closes any current file and opens a new one stamped with the current UTC time.

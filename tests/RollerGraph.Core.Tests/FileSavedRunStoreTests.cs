@@ -4,11 +4,11 @@ using Shouldly;
 
 namespace RollerGraph.Core.Tests;
 
-public class SavedRunStoreTests : IDisposable
+public class FileSavedRunStoreTests : IDisposable
 {
     private readonly string _root;
 
-    public SavedRunStoreTests()
+    public FileSavedRunStoreTests()
     {
         _root = Path.Combine(Path.GetTempPath(), "rollergraph-tests", Guid.NewGuid().ToString("N"));
     }
@@ -24,14 +24,14 @@ public class SavedRunStoreTests : IDisposable
     [Fact]
     public void LoadAll_OnEmptyOrMissingDirectory_ReturnsEmpty()
     {
-        var store = new SavedRunStore(_root);
+        var store = new FileSavedRunStore(_root);
         store.LoadAll().ShouldBeEmpty();
     }
 
     [Fact]
     public void Save_ThenLoadAll_RoundTripsAllFields()
     {
-        var store = new SavedRunStore(_root);
+        var store = new FileSavedRunStore(_root);
         var run = new SavedRun
         {
             Name = "86 nozzle",
@@ -57,7 +57,7 @@ public class SavedRunStoreTests : IDisposable
     [Fact]
     public void Save_MultipleRuns_LoadAllOrderedByCreatedUtc()
     {
-        var store = new SavedRunStore(_root);
+        var store = new FileSavedRunStore(_root);
         store.Save(new SavedRun { Name = "later", CreatedUtc = new DateTime(2025, 6, 3, 10, 0, 0, DateTimeKind.Utc) });
         store.Save(new SavedRun { Name = "earlier", CreatedUtc = new DateTime(2025, 6, 1, 10, 0, 0, DateTimeKind.Utc) });
         store.Save(new SavedRun { Name = "middle", CreatedUtc = new DateTime(2025, 6, 2, 10, 0, 0, DateTimeKind.Utc) });
@@ -69,7 +69,7 @@ public class SavedRunStoreTests : IDisposable
     [Fact]
     public void Save_WithExistingSlug_OverwritesInPlace()
     {
-        var store = new SavedRunStore(_root);
+        var store = new FileSavedRunStore(_root);
         store.Save(new SavedRun { Name = "86 nozzle", Color = "#111111" });
         store.Save(new SavedRun { Name = "86 Nozzle", Color = "#222222" });
 
@@ -84,7 +84,7 @@ public class SavedRunStoreTests : IDisposable
     [Fact]
     public void Delete_RemovesFileAndDropsFromLoadAll()
     {
-        var store = new SavedRunStore(_root);
+        var store = new FileSavedRunStore(_root);
         store.Save(new SavedRun { Name = "Keeper" });
         store.Save(new SavedRun { Name = "Goner" });
         store.Delete("Goner").ShouldBeTrue();
@@ -95,8 +95,18 @@ public class SavedRunStoreTests : IDisposable
     [Fact]
     public void Delete_MissingName_ReturnsFalse()
     {
-        var store = new SavedRunStore(_root);
+        var store = new FileSavedRunStore(_root);
         store.Delete("nothing").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Exists_ReflectsWhetherSlugFileIsOnDisk()
+    {
+        var store = new FileSavedRunStore(_root);
+        store.Exists("anything").ShouldBeFalse();
+        store.Save(new SavedRun { Name = "86 nozzle" });
+        store.Exists("86 Nozzle").ShouldBeTrue();           // slug-equivalent
+        store.Exists("totally different").ShouldBeFalse();
     }
 
     [Fact]
@@ -104,7 +114,7 @@ public class SavedRunStoreTests : IDisposable
     {
         Directory.CreateDirectory(_root);
         // A valid run + a junk file.
-        var store = new SavedRunStore(_root);
+        var store = new FileSavedRunStore(_root);
         store.Save(new SavedRun { Name = "Good", Samples = new[] { S(1, 10, 20, 30) } });
         File.WriteAllText(Path.Combine(_root, "broken.csv"), "this is not a valid run file\n");
 
@@ -113,35 +123,17 @@ public class SavedRunStoreTests : IDisposable
         loaded[0].Name.ShouldBe("Good");
     }
 
-    [Theory]
-    [InlineData("Hello World!", "hello-world")]
-    [InlineData("86 nozzle", "86-nozzle")]
-    [InlineData("  86  ---  nozzle  ", "86-nozzle")]
-    [InlineData("ALL CAPS", "all-caps")]
-    [InlineData("trailing!!!", "trailing")]
-    [InlineData("!!!leading", "leading")]
-    [InlineData("a/b\\c|d", "a-b-c-d")]
-    [InlineData("café", "caf")]              // non-ascii letters dropped
-    [InlineData("", "run")]
-    [InlineData("   ", "run")]
-    [InlineData("!!!", "run")]
-    [InlineData("---", "run")]
-    public void Slugify_ProducesExpected(string input, string expected)
-    {
-        SavedRunStore.Slugify(input).ShouldBe(expected);
-    }
-
     [Fact]
     public void PathFor_UsesSlug()
     {
-        var store = new SavedRunStore(_root);
+        var store = new FileSavedRunStore(_root);
         store.PathFor("86 Nozzle").ShouldEndWith("86-nozzle.csv");
     }
 
     [Fact]
     public void Save_WithFloatingPointSampleData_PreservesPrecision()
     {
-        var store = new SavedRunStore(_root);
+        var store = new FileSavedRunStore(_root);
         var run = new SavedRun
         {
             Name = "precision",

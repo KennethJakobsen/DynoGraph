@@ -4,6 +4,7 @@
     <Project Path="src/RollerGraph.Core/RollerGraph.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/RollerGraph.App.Tests/RollerGraph.App.Tests.csproj" />
     <Project Path="tests/RollerGraph.Core.Tests/RollerGraph.Core.Tests.csproj" />
   </Folder>
 </Solution>

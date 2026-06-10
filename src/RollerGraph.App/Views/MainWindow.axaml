@@ -158,10 +158,10 @@
 
             <TextBlock Text="No saved runs yet. Use Save Run (Cmd/Ctrl+B) to capture the current chart."
                        FontSize="11" Opacity="0.5" TextWrapping="Wrap"
-                       IsVisible="{Binding SavedRuns.Count, Converter={x:Static vm:IntToBoolConverter.Instance}, ConverterParameter=invert}"/>
+                       IsVisible="{Binding SavedRuns.Items.Count, Converter={x:Static vm:IntToBoolConverter.Instance}, ConverterParameter=invert}"/>
 
             <ScrollViewer>
-              <ItemsControl ItemsSource="{Binding SavedRuns}">
+              <ItemsControl ItemsSource="{Binding SavedRuns.Items}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="vm:SavedRunViewModel">
                     <Border Margin="0,2" Padding="6" CornerRadius="4"
