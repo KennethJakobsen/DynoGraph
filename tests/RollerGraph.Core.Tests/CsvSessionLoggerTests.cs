@@ -20,15 +20,18 @@ public class CsvSessionLoggerTests : IDisposable
     [Fact]
     public void BeginSession_CreatesDirectoryAndFileWithHeader()
     {
-        using var logger = new CsvSessionLogger(_root);
+        var logger = new CsvSessionLogger(_root);
         var path = logger.BeginSession(new DateTime(2025, 6, 10, 12, 0, 0, DateTimeKind.Utc));
 
         File.Exists(path).ShouldBeTrue();
         logger.IsActive.ShouldBeTrue();
         logger.CurrentFilePath.ShouldBe(path);
 
-        // Force flush so we can read the bytes back.
-        logger.Flush();
+        // Close the writer before reading so this test works on Windows,
+        // where the writer's exclusive write handle prevents File.ReadAllText
+        // from opening the file even though FileShare.Read is set.
+        logger.EndSession();
+
         var contents = File.ReadAllText(path);
         contents.ShouldStartWith("timestamp_utc,raw_line");
     }
