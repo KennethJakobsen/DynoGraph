@@ -66,6 +66,13 @@ public sealed class SamplePipeline
 
         var adjusted = _adjuster.Adjust(parsed.Value);
 
+        // Drop physically-impossible negative readings on any plotted channel.
+        // A roller can produce a brief negative HP/NM during decel and a
+        // misbehaving sensor can spike negative on any channel; either way
+        // these only confuse the chart and skew peak tracking.
+        if (adjusted.SpeedKmh < 0 || adjusted.Nm < 0 || adjusted.Hp < 0)
+            return new SamplePipelineResult(SamplePipelineOutcome.FilteredOut);
+
         if (adjusted.SpeedKmh < _settings.MinSpeedKmh)
             return new SamplePipelineResult(SamplePipelineOutcome.FilteredOut);
 

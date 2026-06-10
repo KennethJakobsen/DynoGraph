@@ -130,4 +130,83 @@ public class SamplePipelineTests
         Should.Throw<ArgumentNullException>(() => new SamplePipeline(null!, SampleAdjuster.Identity));
         Should.Throw<ArgumentNullException>(() => new SamplePipeline(new Settings(), null!));
     }
+
+    // -------- Negative-value filter --------
+
+    [Fact]
+    public void Process_NegativeNm_ReturnsFilteredOut()
+    {
+        var pipeline = new SamplePipeline(NewSettings(), SampleAdjuster.Identity);
+        var result = pipeline.Process("1,30,-5,400", DateTime.UtcNow);
+
+        result.Outcome.ShouldBe(SamplePipelineOutcome.FilteredOut);
+        result.Sample.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Process_NegativeHp_ReturnsFilteredOut()
+    {
+        // hp_x10 of -10 -> hp = -1.0 after the parser /10 step.
+        var pipeline = new SamplePipeline(NewSettings(), SampleAdjuster.Identity);
+        var result = pipeline.Process("1,30,60,-10", DateTime.UtcNow);
+
+        result.Outcome.ShouldBe(SamplePipelineOutcome.FilteredOut);
+        result.Sample.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Process_NegativeSpeed_ReturnsFilteredOut()
+    {
+        // MinSpeedKmh defaults to 0 in NewSettings, so the -5 hits the
+        // negative filter rather than the MinSpeed filter.
+        var pipeline = new SamplePipeline(NewSettings(), SampleAdjuster.Identity);
+        var result = pipeline.Process("1,-5,60,400", DateTime.UtcNow);
+
+        result.Outcome.ShouldBe(SamplePipelineOutcome.FilteredOut);
+        result.Sample.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Process_AllChannelsZero_IsAccepted()
+    {
+        // Zero is on the boundary - explicitly NOT negative, so it must pass.
+        var pipeline = new SamplePipeline(NewSettings(), SampleAdjuster.Identity);
+        var result = pipeline.Process("1,0,0,0", DateTime.UtcNow);
+
+        result.Outcome.ShouldBe(SamplePipelineOutcome.Accepted);
+        result.Sample!.Value.SpeedKmh.ShouldBe(0);
+        result.Sample.Value.Nm.ShouldBe(0);
+        result.Sample.Value.Hp.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Process_AdjusterTurnsPositiveIntoNegative_ReturnsFilteredOut()
+    {
+        // Filter runs AFTER adjustment - if a user expression like
+        // 'x - 100' produces a negative HP, that's the value we reject.
+        var adjuster = new SampleAdjuster(
+            ChannelAdjustment.Identity,
+            ChannelAdjustment.Identity,
+            new ChannelAdjustment { Offset = -100 });   // hp 40 -> -60
+        var pipeline = new SamplePipeline(NewSettings(), adjuster);
+
+        var result = pipeline.Process("1,30,60,400", DateTime.UtcNow);
+        result.Outcome.ShouldBe(SamplePipelineOutcome.FilteredOut);
+    }
+
+    [Fact]
+    public void Process_AdjusterTurnsNegativeIntoPositive_IsAccepted()
+    {
+        // Conversely, if the adjuster (e.g. abs-equivalent factor) flips a
+        // raw negative to a positive, the pipeline must accept it.
+        var adjuster = new SampleAdjuster(
+            ChannelAdjustment.Identity,
+            new ChannelAdjustment { Factor = -1.0 },    // nm -5 -> 5
+            ChannelAdjustment.Identity);
+        var pipeline = new SamplePipeline(NewSettings(), adjuster);
+
+        var result = pipeline.Process("1,30,-5,400", DateTime.UtcNow);
+        result.Outcome.ShouldBe(SamplePipelineOutcome.Accepted);
+        result.Sample!.Value.Nm.ShouldBe(5);
+    }
 }

@@ -111,6 +111,23 @@ samplenum,speed,nm,hp_x10,NA,NA,NA,NA,NA
 Only the first four fields are required; trailing fields may be present or
 absent. Bad lines are dropped silently and counted.
 
+### Sample filtering
+
+Once a line is parsed, three filters run in order before the sample reaches
+the chart, peak tracking, or saved-run capture:
+
+1. **Adjustments** are applied (per-channel factor/offset/expression from
+   Settings -> Adjustments).
+2. **Negative-value filter** drops the sample if the post-adjustment Speed,
+   NM, or HP is below zero. These readings are physically nonsensical for a
+   dyno, only confuse the chart and skew peak tracking, and are silently
+   discarded. Zero passes through.
+3. **MinSpeed filter** drops the sample if speed is below `MinSpeedKmh`
+   (Settings, default 5 km/h) - the typical "vehicle is rolling" threshold.
+
+Filtered samples are still written verbatim to the session log file, so the
+raw wire record on disk remains lossless even when the chart skips them.
+
 ## Log file location
 
 | OS | Path |
