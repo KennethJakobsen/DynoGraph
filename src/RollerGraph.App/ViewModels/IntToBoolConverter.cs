@@ -4,8 +4,8 @@ using Avalonia.Data.Converters;
 namespace RollerGraph.App.ViewModels;
 
 /// <summary>
-/// Returns true when the bound int is &gt; 0; useful for enabling buttons
-/// when a counter (e.g. SampleCount) is non-zero.
+/// Returns true when the bound int is &gt; 0. Pass <c>"invert"</c> as the
+/// converter parameter to flip the result (true when value is 0).
 /// </summary>
 public sealed class IntToBoolConverter : IValueConverter
 {
@@ -13,9 +13,14 @@ public sealed class IntToBoolConverter : IValueConverter
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
-        if (value is int i) return i > 0;
-        if (value is null) return false;
-        return System.Convert.ToInt32(value, culture) > 0;
+        bool result;
+        if (value is int i) result = i > 0;
+        else if (value is null) result = false;
+        else result = System.Convert.ToInt32(value, culture) > 0;
+
+        if (parameter is string s && s.Equals("invert", StringComparison.OrdinalIgnoreCase))
+            return !result;
+        return result;
     }
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)

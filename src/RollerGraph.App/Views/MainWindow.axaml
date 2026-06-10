@@ -4,19 +4,39 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:RollerGraph.App.ViewModels"
         xmlns:lvc="using:LiveChartsCore.SkiaSharpView.Avalonia"
-        mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+        mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="800"
         x:Class="RollerGraph.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
-        Width="1200" Height="800"
-        MinWidth="800" MinHeight="500"
+        Width="1280" Height="800"
+        MinWidth="900" MinHeight="500"
         Title="RollerGraph">
+
+  <Window.KeyBindings>
+    <KeyBinding Gesture="Escape" Command="{Binding ResetCommand}"/>
+    <KeyBinding Gesture="Cmd+R" Command="{Binding ResetCommand}"/>
+    <KeyBinding Gesture="Ctrl+R" Command="{Binding ResetCommand}"/>
+    <KeyBinding Gesture="Cmd+K" Command="{Binding ToggleConnectionCommand}"/>
+    <KeyBinding Gesture="Ctrl+K" Command="{Binding ToggleConnectionCommand}"/>
+    <KeyBinding Gesture="Cmd+O"  Command="{Binding ReplayCsvCommand}"/>
+    <KeyBinding Gesture="Ctrl+O" Command="{Binding ReplayCsvCommand}"/>
+    <KeyBinding Gesture="Cmd+E"  Command="{Binding ExportPngCommand}"/>
+    <KeyBinding Gesture="Ctrl+E" Command="{Binding ExportPngCommand}"/>
+    <KeyBinding Gesture="Cmd+P"  Command="{Binding PrintCommand}"/>
+    <KeyBinding Gesture="Ctrl+P" Command="{Binding PrintCommand}"/>
+    <KeyBinding Gesture="Cmd+B"  Command="{Binding SaveCurrentRunCommand}"/>
+    <KeyBinding Gesture="Ctrl+B" Command="{Binding SaveCurrentRunCommand}"/>
+    <KeyBinding Gesture="Cmd+Shift+B"  Command="{Binding ClearSavedRunsCommand}"/>
+    <KeyBinding Gesture="Ctrl+Shift+B" Command="{Binding ClearSavedRunsCommand}"/>
+    <KeyBinding Gesture="Cmd+OemComma"  Command="{Binding OpenSettingsCommand}"/>
+    <KeyBinding Gesture="Ctrl+OemComma" Command="{Binding OpenSettingsCommand}"/>
+  </Window.KeyBindings>
 
   <DockPanel LastChildFill="True">
 
     <!-- Toolbar -->
     <Border DockPanel.Dock="Top" Padding="10,8" BorderThickness="0,0,0,1"
             BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
-      <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+      <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
         <TextBlock Text="Port:" VerticalAlignment="Center"/>
         <ComboBox MinWidth="200"
                   ItemsSource="{Binding AvailablePorts}"
@@ -25,14 +45,19 @@
         <Button Content="Connect" Command="{Binding ConnectCommand}"/>
         <Button Content="Disconnect" Command="{Binding DisconnectCommand}"/>
         <Separator Width="12"/>
-        <Button Content="Reset" Command="{Binding ResetCommand}"/>
-        <Button Content="Replay CSV..." Click="OnReplayClicked"/>
+        <Button Content="Reset" Command="{Binding ResetCommand}" ToolTip.Tip="Esc"/>
+        <Button Content="Replay CSV..." Command="{Binding ReplayCsvCommand}"/>
         <Separator Width="12"/>
         <CheckBox Content="Smoothing" IsChecked="{Binding SmoothingEnabled}"/>
         <Separator Width="12"/>
-        <Button Content="Export PNG..." Click="OnExportPngClicked"
+        <Button Content="Save Run" Command="{Binding SaveCurrentRunCommand}"
+                ToolTip.Tip="Cmd+B / Ctrl+B"/>
+        <Button Content="Load Run..." Command="{Binding LoadSavedRunCommand}"/>
+        <Separator Width="12"/>
+        <Button Content="Print" Command="{Binding PrintCommand}"/>
+        <Button Content="Export PNG..." Command="{Binding ExportPngCommand}"
                 IsEnabled="{Binding Chart.SampleCount, Converter={x:Static vm:IntToBoolConverter.Instance}}"/>
-        <Button Content="Settings..." Click="OnSettingsClicked"/>
+        <Button Content="Settings..." Command="{Binding OpenSettingsCommand}"/>
       </StackPanel>
     </Border>
 
@@ -56,8 +81,8 @@
       </Grid>
     </Border>
 
-    <!-- Main content: chart + peak stats panel side-by-side -->
-    <Grid ColumnDefinitions="*,220" Margin="6">
+    <!-- Main content: chart + side panel -->
+    <Grid ColumnDefinitions="*,260" Margin="6">
 
       <lvc:CartesianChart Grid.Column="0"
                           Name="ChartHost"
@@ -65,65 +90,111 @@
                           XAxes="{Binding Chart.XAxes}"
                           YAxes="{Binding Chart.YAxes}"/>
 
-      <!-- Peak stats panel -->
-      <Border Grid.Column="1" Margin="8,0,0,0" Padding="14"
-              CornerRadius="6"
-              BorderThickness="1"
-              BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
-              Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
-        <StackPanel Spacing="14">
-          <TextBlock Text="PEAK STATS" FontSize="11" FontWeight="Bold" Opacity="0.6"/>
+      <!-- Side panel: peak stats + saved runs -->
+      <Grid Grid.Column="1" Margin="8,0,0,0" RowDefinitions="Auto,*" RowSpacing="8">
 
-          <StackPanel Spacing="4">
-            <TextBlock Text="Peak HP" FontSize="11" Opacity="0.7"/>
-            <StackPanel Orientation="Horizontal" Spacing="6">
-              <TextBlock Text="{Binding Chart.PeakHp, StringFormat='{}{0:F1}'}"
-                         FontSize="28" FontWeight="Bold" Foreground="#FF8A00"/>
-              <TextBlock Text="HP" FontSize="14" VerticalAlignment="Bottom" Margin="0,0,0,4" Opacity="0.7"/>
+        <!-- Peak stats card -->
+        <Border Grid.Row="0" Padding="14" CornerRadius="6"
+                BorderThickness="1"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+          <StackPanel Spacing="12">
+            <TextBlock Text="PEAK STATS" FontSize="11" FontWeight="Bold" Opacity="0.6"/>
+
+            <StackPanel Spacing="2">
+              <TextBlock Text="Peak HP" FontSize="11" Opacity="0.7"/>
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBlock Text="{Binding Chart.PeakHp, StringFormat='{}{0:F1}'}"
+                           FontSize="26" FontWeight="Bold" Foreground="#FF8A00"/>
+                <TextBlock Text="HP" FontSize="13" VerticalAlignment="Bottom" Margin="0,0,0,4" Opacity="0.7"/>
+              </StackPanel>
+              <TextBlock FontSize="11" Opacity="0.6">
+                <Run Text="@ "/>
+                <Run Text="{Binding Chart.PeakHpSpeed, StringFormat='{}{0:F0}'}"/>
+                <Run Text=" km/h"/>
+              </TextBlock>
             </StackPanel>
-            <TextBlock FontSize="11" Opacity="0.6">
-              <Run Text="@ "/>
-              <Run Text="{Binding Chart.PeakHpSpeed, StringFormat='{}{0:F0}'}"/>
-              <Run Text=" km/h"/>
-            </TextBlock>
-          </StackPanel>
 
-          <Separator Opacity="0.3"/>
+            <Separator Opacity="0.3"/>
 
-          <StackPanel Spacing="4">
-            <TextBlock Text="Peak NM" FontSize="11" Opacity="0.7"/>
-            <StackPanel Orientation="Horizontal" Spacing="6">
-              <TextBlock Text="{Binding Chart.PeakNm, StringFormat='{}{0:F1}'}"
-                         FontSize="28" FontWeight="Bold" Foreground="#00B8A9"/>
-              <TextBlock Text="NM" FontSize="14" VerticalAlignment="Bottom" Margin="0,0,0,4" Opacity="0.7"/>
+            <StackPanel Spacing="2">
+              <TextBlock Text="Peak NM" FontSize="11" Opacity="0.7"/>
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBlock Text="{Binding Chart.PeakNm, StringFormat='{}{0:F1}'}"
+                           FontSize="26" FontWeight="Bold" Foreground="#00B8A9"/>
+                <TextBlock Text="NM" FontSize="13" VerticalAlignment="Bottom" Margin="0,0,0,4" Opacity="0.7"/>
+              </StackPanel>
+              <TextBlock FontSize="11" Opacity="0.6">
+                <Run Text="@ "/>
+                <Run Text="{Binding Chart.PeakNmSpeed, StringFormat='{}{0:F0}'}"/>
+                <Run Text=" km/h"/>
+              </TextBlock>
             </StackPanel>
-            <TextBlock FontSize="11" Opacity="0.6">
-              <Run Text="@ "/>
-              <Run Text="{Binding Chart.PeakNmSpeed, StringFormat='{}{0:F0}'}"/>
-              <Run Text=" km/h"/>
-            </TextBlock>
-          </StackPanel>
 
-          <Separator Opacity="0.3"/>
+            <Separator Opacity="0.3"/>
 
-          <StackPanel Spacing="4">
-            <TextBlock Text="Peak Speed" FontSize="11" Opacity="0.7"/>
-            <StackPanel Orientation="Horizontal" Spacing="6">
-              <TextBlock Text="{Binding Chart.PeakSpeed, StringFormat='{}{0:F1}'}"
-                         FontSize="28" FontWeight="Bold"/>
-              <TextBlock Text="km/h" FontSize="14" VerticalAlignment="Bottom" Margin="0,0,0,4" Opacity="0.7"/>
+            <StackPanel Spacing="2">
+              <TextBlock Text="Peak Speed" FontSize="11" Opacity="0.7"/>
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBlock Text="{Binding Chart.PeakSpeed, StringFormat='{}{0:F1}'}"
+                           FontSize="26" FontWeight="Bold"/>
+                <TextBlock Text="km/h" FontSize="13" VerticalAlignment="Bottom" Margin="0,0,0,4" Opacity="0.7"/>
+              </StackPanel>
             </StackPanel>
           </StackPanel>
+        </Border>
 
-          <Separator Opacity="0.3"/>
+        <!-- Saved Runs card -->
+        <Border Grid.Row="1" Padding="14" CornerRadius="6"
+                BorderThickness="1"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+          <DockPanel LastChildFill="True">
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+              <TextBlock Grid.Column="0" Text="SAVED RUNS" FontSize="11" FontWeight="Bold" Opacity="0.6" VerticalAlignment="Center"/>
+              <Button Grid.Column="1" Content="+ Save current" FontSize="11"
+                      Command="{Binding SaveCurrentRunCommand}"/>
+            </Grid>
 
-          <StackPanel Spacing="2">
-            <TextBlock Text="Connection" FontSize="11" Opacity="0.7"/>
-            <TextBlock Text="{Binding StatusMessage}" FontSize="13" TextWrapping="Wrap"/>
-          </StackPanel>
-        </StackPanel>
-      </Border>
+            <TextBlock Text="No saved runs yet. Use Save Run (Cmd/Ctrl+B) to capture the current chart."
+                       FontSize="11" Opacity="0.5" TextWrapping="Wrap"
+                       IsVisible="{Binding SavedRuns.Count, Converter={x:Static vm:IntToBoolConverter.Instance}, ConverterParameter=invert}"/>
 
+            <ScrollViewer>
+              <ItemsControl ItemsSource="{Binding SavedRuns}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:SavedRunViewModel">
+                    <Border Margin="0,2" Padding="6" CornerRadius="4"
+                            BorderThickness="1"
+                            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+                      <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="6">
+                        <Border Grid.Column="0" Width="14" Height="14" CornerRadius="3"
+                                Background="{Binding Color, Converter={x:Static vm:HexToBrushConverter.Instance}}"
+                                VerticalAlignment="Center"/>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                          <TextBlock Text="{Binding Name}" FontSize="12" FontWeight="SemiBold"/>
+                          <TextBlock FontSize="10" Opacity="0.6">
+                            <Run Text="{Binding SampleCount}"/>
+                            <Run Text=" samples"/>
+                          </TextBlock>
+                        </StackPanel>
+                        <CheckBox Grid.Column="2" IsChecked="{Binding IsVisible}"
+                                  Click="OnSavedRunVisibilityToggled"
+                                  ToolTip.Tip="Show/hide on chart"/>
+                        <Button Grid.Column="3" Content="..." FontSize="11" Padding="6,2"
+                                Click="OnSavedRunRenameClicked"/>
+                        <Button Grid.Column="4" Content="x" FontSize="11" Padding="6,2"
+                                Click="OnSavedRunDeleteClicked"/>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </DockPanel>
+        </Border>
+
+      </Grid>
     </Grid>
   </DockPanel>
 </Window>

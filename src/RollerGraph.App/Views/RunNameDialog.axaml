@@ -1,0 +1,20 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="RollerGraph.App.Views.RunNameDialog"
+        Width="400" Height="180"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Title="Save Run">
+  <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="16">
+    <TextBlock Grid.Row="0" Text="Name this run" FontWeight="SemiBold" Margin="0,0,0,8"/>
+    <TextBox  Grid.Row="1" Name="NameBox"
+              PlaceholderText="e.g. 86 nozzle"
+              FontFamily="Menlo, Consolas, monospace"/>
+    <TextBlock Grid.Row="2" Name="ErrorText" Foreground="#E04040" FontSize="11" Margin="0,8,0,0"
+               IsVisible="False"/>
+    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
+      <Button Content="Cancel" Click="OnCancelClicked"/>
+      <Button Content="Save" Click="OnSaveClicked" Classes="accent" IsDefault="True"/>
+    </StackPanel>
+  </Grid>
+</Window>

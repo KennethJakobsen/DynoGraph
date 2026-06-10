@@ -4,8 +4,9 @@ Cross-platform .NET 10 desktop app that reads dyno output from a serial USB
 connection (19200 BAUD) and plots HP and NM versus speed in real time, with
 auto-scaling axes and CSV logging/replay.
 
-This is **Phase 1 + 2** of a phased delivery. All originally planned features
-are now implemented.
+This is **Phase 1 + 2 + 3** of a phased delivery. All originally planned
+features plus the Phase 3 additions (saved runs, keyboard shortcuts, print)
+are implemented.
 
 ---
 
@@ -58,6 +59,39 @@ Examples:
 - `pow(x, 0.98)` - mild non-linear correction
 - `max(x - 2, 0)` - subtract a deadband, clip negatives
 
+### Phase 3 (saved runs, shortcuts, print)
+
+- **Saved Runs**: capture any chart's data as a named run that's automatically
+  written to `{LocalAppData}/RollerGraph/runs/<slug>.csv`. Multiple saved runs
+  can be overlaid on the chart simultaneously for tuning comparisons
+  (e.g. "86 nozzle" vs "102 nozzle").
+- **Save Run** (Cmd/Ctrl+B) prompts for a name and captures the current chart.
+- **Load Run...** opens a CSV file as a new saved run. Both saved-run files
+  and regular session logs are accepted.
+- **Saved Runs panel** lists every saved run with a color swatch, sample count,
+  visibility checkbox, rename and delete buttons. Visibility is persisted.
+- **Auto-load on launch**: every saved run is restored to the chart at startup.
+- **Clear All Saved Runs** (Cmd/Ctrl+Shift+B) removes all saved runs at once.
+- **Print** (Cmd/Ctrl+P or Enter) renders the chart to a PNG and hands it off
+  to the OS print pipeline (Preview on macOS, default viewer on Linux,
+  shell print on Windows).
+
+### Keyboard shortcuts
+
+| Shortcut | Action |
+|---|---|
+| Esc | Reset |
+| Cmd / Ctrl + R | Reset |
+| Cmd / Ctrl + K | Toggle Connect / Disconnect |
+| Cmd / Ctrl + O | Replay CSV... |
+| Cmd / Ctrl + E | Export PNG... |
+| Cmd / Ctrl + P | Print |
+| Enter | Print (when no text input has focus) |
+| Cmd / Ctrl + , | Open Settings |
+| Cmd / Ctrl + B | Save Current Run |
+| Cmd / Ctrl + Shift + B | Clear All Saved Runs |
+| Space | Toggle Smoothing (when no text input has focus) |
+
 ## CSV input format
 
 Each line, newline-delimited (`\n` or `\r\n`):
@@ -87,6 +121,18 @@ absent. Bad lines are dropped silently and counted.
 
 Each session creates a file named `session-YYYYMMDD-HHMMSS.csv`. A new file
 is opened on every Connect and every Reset.
+
+## Saved runs location
+
+| OS | Path |
+|---|---|
+| macOS | `~/Library/Application Support/RollerGraph/runs/` |
+| Linux | `~/.local/share/RollerGraph/runs/` |
+| Windows | `%LOCALAPPDATA%\RollerGraph\runs\` |
+
+One CSV per saved run, named after the slugified run name. The first few
+lines are `#`-prefixed metadata (display name, color, visibility, created
+timestamp), followed by a header and the captured samples.
 
 ## Settings file location
 
@@ -172,18 +218,19 @@ and then taper off.
 RollerGraph.sln
 ├── src/
 │   ├── RollerGraph.Core/          # No UI deps - pure, testable
-│   │   ├── Models/                # Sample, Settings, SettingsStore
+│   │   ├── Models/                # Sample, SavedRun, Settings, SettingsStore
 │   │   ├── Parsing/               # CsvLineParser
 │   │   ├── Serial/                # ISerialSource, RjcpSerialSource, ReplaySerialSource, LineBuffer
 │   │   ├── Scaling/               # NiceNumber
 │   │   ├── Smoothing/             # RollingAverage, SampleSmoother
 │   │   ├── Adjustments/           # ChannelAdjustment, SampleAdjuster, ExpressionParser
+│   │   ├── Storage/               # SavedRunStore, RunColorPalette
 │   │   └── Logging/               # CsvSessionLogger
 │   └── RollerGraph.App/           # Avalonia 12 app
 │       ├── ViewModels/            # MainWindowViewModel, ChartViewModel, SettingsViewModel,
-│       │                          # ChannelAdjustmentViewModel, converters
-│       ├── Views/                 # MainWindow.axaml, SettingsWindow.axaml
-│       └── Services/              # IUiDispatcher
+│       │                          # SavedRunViewModel, ChannelAdjustmentViewModel, converters
+│       ├── Views/                 # MainWindow, SettingsWindow, RunNameDialog, ConfirmDialog
+│       └── Services/              # IUiDispatcher, IMainWindowInteractor
 └── tests/
     └── RollerGraph.Core.Tests/    # xUnit + Shouldly
 ```
