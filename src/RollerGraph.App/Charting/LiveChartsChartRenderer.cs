@@ -14,6 +14,12 @@ namespace RollerGraph.App.Charting;
 /// LiveChartsCore + SkiaSharp implementation of <see cref="IChartRenderer"/>.
 /// This is the single place in the App that constructs LiveCharts series,
 /// axes and paints - everywhere else depends on <see cref="IChartRenderer"/>.
+///
+/// Live samples render as a single HP line. NM is no longer drawn for the
+/// live stream (peak NM is still tracked separately by the view-model).
+/// Saved-run overlays continue to render BOTH HP and NM lines so historical
+/// runs imported from elsewhere remain useful; the right-hand NM axis is
+/// hidden by default and only shown while at least one overlay is present.
 /// </summary>
 public sealed class LiveChartsChartRenderer : IChartRenderer
 {
@@ -21,7 +27,6 @@ public sealed class LiveChartsChartRenderer : IChartRenderer
     private static readonly SKColor NmStroke = new(0x00, 0xB8, 0xA9); // teal
 
     private readonly ObservableCollection<ObservablePoint> _hpPoints = new();
-    private readonly ObservableCollection<ObservablePoint> _nmPoints = new();
     private readonly Dictionary<string, (ISeries Hp, ISeries Nm)> _overlays =
         new(StringComparer.OrdinalIgnoreCase);
 
@@ -38,7 +43,6 @@ public sealed class LiveChartsChartRenderer : IChartRenderer
         Series = new ObservableCollection<ISeries>
         {
             BuildLiveSeries("HP", _hpPoints, HpStroke, scalesYAt: 0, thickness: 2),
-            BuildLiveSeries("NM", _nmPoints, NmStroke, scalesYAt: 1, thickness: 2),
         };
 
         _xAxis = new Axis
@@ -55,6 +59,9 @@ public sealed class LiveChartsChartRenderer : IChartRenderer
             LabelsPaint = new SolidColorPaint(HpStroke),
             NamePaint = new SolidColorPaint(HpStroke),
         };
+        // NM axis: declared so saved-run overlays have a Y-axis to scale on,
+        // but hidden until at least one overlay is added. Live samples never
+        // contribute to it.
         _yAxisNm = new Axis
         {
             Name = "NM",
@@ -64,6 +71,7 @@ public sealed class LiveChartsChartRenderer : IChartRenderer
             LabelsPaint = new SolidColorPaint(NmStroke),
             NamePaint = new SolidColorPaint(NmStroke),
             ShowSeparatorLines = false,
+            IsVisible = false,
         };
 
         XAxes = new[] { _xAxis };
@@ -77,14 +85,13 @@ public sealed class LiveChartsChartRenderer : IChartRenderer
     public void AppendLivePoint(Sample sample)
     {
         _hpPoints.Add(new ObservablePoint(sample.SpeedKmh, sample.Hp));
-        _nmPoints.Add(new ObservablePoint(sample.SpeedKmh, sample.Nm));
-        GrowAxesFor(sample.SpeedKmh, sample.Hp, sample.Nm);
+        // Live NM is not drawn; only the speed and HP axes need to grow.
+        GrowLiveAxes(sample.SpeedKmh, sample.Hp);
     }
 
     public void ResetLive()
     {
         _hpPoints.Clear();
-        _nmPoints.Clear();
         _xAxis.MaxLimit = _settings.DefaultSpeedMax;
         _yAxisHp.MaxLimit = _settings.DefaultHpMax;
         _yAxisNm.MaxLimit = _settings.DefaultNmMax;
@@ -121,6 +128,7 @@ public sealed class LiveChartsChartRenderer : IChartRenderer
         Series.Add(nmSeries);
 
         if (run.IsVisible) GrowAxesForOverlay(run);
+        UpdateNmAxisVisibility();
     }
 
     public void RemoveOverlay(string name)
@@ -129,6 +137,7 @@ public sealed class LiveChartsChartRenderer : IChartRenderer
         Series.Remove(pair.Hp);
         Series.Remove(pair.Nm);
         _overlays.Remove(name);
+        UpdateNmAxisVisibility();
     }
 
     public void SetOverlayVisible(string name, bool isVisible)
@@ -136,6 +145,7 @@ public sealed class LiveChartsChartRenderer : IChartRenderer
         if (!_overlays.TryGetValue(name, out var pair)) return;
         pair.Hp.IsVisible = isVisible;
         pair.Nm.IsVisible = isVisible;
+        UpdateNmAxisVisibility();
     }
 
     public void ClearOverlays()
@@ -146,18 +156,16 @@ public sealed class LiveChartsChartRenderer : IChartRenderer
             Series.Remove(pair.Nm);
         }
         _overlays.Clear();
+        UpdateNmAxisVisibility();
     }
 
-    private void GrowAxesFor(double speed, double hp, double nm)
+    private void GrowLiveAxes(double speed, double hp)
     {
         var newX = NiceNumber.NextAxisMax(_xAxis.MaxLimit ?? _settings.DefaultSpeedMax, speed);
         if (newX != _xAxis.MaxLimit) _xAxis.MaxLimit = newX;
 
         var newHp = NiceNumber.NextAxisMax(_yAxisHp.MaxLimit ?? _settings.DefaultHpMax, hp);
         if (newHp != _yAxisHp.MaxLimit) _yAxisHp.MaxLimit = newHp;
-
-        var newNm = NiceNumber.NextAxisMax(_yAxisNm.MaxLimit ?? _settings.DefaultNmMax, nm);
-        if (newNm != _yAxisNm.MaxLimit) _yAxisNm.MaxLimit = newNm;
     }
 
     private void GrowAxesForOverlay(SavedRun run)
@@ -169,7 +177,21 @@ public sealed class LiveChartsChartRenderer : IChartRenderer
             if (s.Hp > maxHp) maxHp = s.Hp;
             if (s.Nm > maxNm) maxNm = s.Nm;
         }
-        GrowAxesFor(maxSp, maxHp, maxNm);
+        // Speed and HP grow as for live samples; NM grows only on the
+        // overlay-only axis so the live HP scale is not skewed by NM data.
+        GrowLiveAxes(maxSp, maxHp);
+        var newNm = NiceNumber.NextAxisMax(_yAxisNm.MaxLimit ?? _settings.DefaultNmMax, maxNm);
+        if (newNm != _yAxisNm.MaxLimit) _yAxisNm.MaxLimit = newNm;
+    }
+
+    /// <summary>
+    /// Show the right-hand NM axis only while at least one visible overlay
+    /// has NM data. Hidden when the live chart is alone, or when every
+    /// overlay is hidden / cleared.
+    /// </summary>
+    private void UpdateNmAxisVisibility()
+    {
+        _yAxisNm.IsVisible = _overlays.Values.Any(p => p.Nm.IsVisible == true);
     }
 
     private static LineSeries<ObservablePoint> BuildLiveSeries(

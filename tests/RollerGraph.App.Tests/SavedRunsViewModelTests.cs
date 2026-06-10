@@ -33,8 +33,9 @@ public class SavedRunsViewModelTests
         vm.Items.Count.ShouldBe(2);
         vm.Items.Select(r => r.Name).ShouldContain("A");
         vm.Items.Select(r => r.Name).ShouldContain("B");
-        // Each saved run adds 2 series (HP + NM) to the chart.
-        renderer.Series.Count.ShouldBe(2 /*live HP+NM*/ + 4);
+        // Each saved run adds 2 series (HP + NM) to the chart on top of the
+        // single live HP series.
+        renderer.Series.Count.ShouldBe(1 /*live HP*/ + 4);
     }
 
     [Fact]
@@ -78,7 +79,7 @@ public class SavedRunsViewModelTests
         captured.ShouldNotBeNull();
         vm.Items.Count.ShouldBe(1);
         store.Exists("Run 1").ShouldBeTrue();
-        renderer.Series.Count.ShouldBe(2 + 2);          // live + 1 overlay
+        renderer.Series.Count.ShouldBe(1 + 2);          // live HP + 1 overlay (HP+NM)
     }
 
     [Fact]
@@ -118,7 +119,7 @@ public class SavedRunsViewModelTests
 
         vm.Items.ShouldBeEmpty();
         store.Exists("Run 1").ShouldBeFalse();
-        renderer.Series.Count.ShouldBe(2);              // only live series remain
+        renderer.Series.Count.ShouldBe(1);              // only live HP series remains
     }
 
     [Fact]

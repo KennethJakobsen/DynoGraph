@@ -26,7 +26,7 @@ public interface IChartRenderer
     /// <summary>The Y axis array bound by the View.</summary>
     ICartesianAxis[] YAxes { get; }
 
-    /// <summary>Add a single live sample point to the live HP/NM series.</summary>
+    /// <summary>Add a single live sample point to the live HP series.</summary>
     void AppendLivePoint(Sample sample);
 
     /// <summary>Clear all live points and snap the axis limits back to the defaults.</summary>

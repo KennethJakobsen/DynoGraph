@@ -38,9 +38,10 @@ public sealed record Settings
     public ChannelAdjustment NmAdjustment { get; init; } = new();
 
     /// <summary>
-    /// Adjustment applied to the parsed HP value. The raw HP*10 from the wire
-    /// has already been divided by 10 by the parser; this allows e.g. a
-    /// dyno-loss correction such as <c>Factor = 1 / 0.92</c>.
+    /// Adjustment applied to the parsed HP value. The parser passes the wire
+    /// value through unchanged, so this is also the right place to apply any
+    /// unit conversion - e.g. <c>Factor = 0.1</c> if your dyno emits HP*10,
+    /// or <c>Expression = "x / 0.92"</c> for a drivetrain-loss correction.
     /// </summary>
     public ChannelAdjustment HpAdjustment { get; init; } = new();
 }

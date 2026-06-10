@@ -105,8 +105,8 @@ public class MainWindowViewModelTests
         vm.SelectedPort = "COM1";
         await vm.ConnectCommand.ExecuteAsync(null);
 
-        factory.LiveSource.EmitLine("1,30,60,400");
-        factory.LiveSource.EmitLine("2,40,70,550");
+        factory.LiveSource.EmitLine("1,30,60,40");
+        factory.LiveSource.EmitLine("2,40,70,55");
 
         vm.Chart.SampleCount.ShouldBe(2);
         vm.Chart.PeakHp.ShouldBe(55);
@@ -177,8 +177,8 @@ public class MainWindowViewModelTests
         await vm.ConnectCommand.ExecuteAsync(null);
 
         vm.SmoothingEnabled = true;
-        factory.LiveSource.EmitLine("1,30,60,100");   // hp 10
-        factory.LiveSource.EmitLine("2,30,60,300");   // hp 30
+        factory.LiveSource.EmitLine("1,30,60,10");   // hp 10
+        factory.LiveSource.EmitLine("2,30,60,30");   // hp 30
 
         // With smoothing window 3, after 2 samples the average is (10+30)/2 = 20
         vm.Chart.SampleCount.ShouldBe(2);

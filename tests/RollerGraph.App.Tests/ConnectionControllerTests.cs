@@ -210,11 +210,11 @@ public class ConnectionControllerTests
         var samples = new List<Sample>();
         controller.SampleAccepted += (_, args) => samples.Add(args.Sample);
 
-        factory.LiveSource.EmitLine("1,30,60,100");   // hp 10 buffered
-        factory.LiveSource.EmitLine("2,30,60,200");   // hp 20 buffered
+        factory.LiveSource.EmitLine("1,30,60,10");   // hp 10 buffered
+        factory.LiveSource.EmitLine("2,30,60,20");   // hp 20 buffered
         controller.SmoothingEnabled = false;           // disables + resets
         controller.SmoothingEnabled = true;            // re-enable for fresh window
-        factory.LiveSource.EmitLine("3,30,60,300");   // fresh window: hp 30
+        factory.LiveSource.EmitLine("3,30,60,30");   // fresh window: hp 30
 
         samples[^1].Hp.ShouldBe(30);
     }

@@ -5,8 +5,12 @@ namespace RollerGraph.Core.Parsing;
 
 /// <summary>
 /// Parses a single CSV line in the format:
-///   samplenum,speed,nm,hp*10,NA,NA,NA,NA,NA
+///   samplenum,speed,nm,hp,NA,NA,NA,NA,NA
 /// into a <see cref="Sample"/>. Returns null for malformed input.
+///
+/// All numeric fields are taken as-is - any unit conversion (e.g. dividing
+/// a raw hp*10 by 10, or applying a drivetrain-loss correction) is the job
+/// of the per-channel adjustments configured in Settings.
 /// </summary>
 public static class CsvLineParser
 {
@@ -24,7 +28,7 @@ public static class CsvLineParser
         var trimmed = line.Trim();
         var parts = trimmed.Split(',');
 
-        // Need at least the first 4 fields: samplenum, speed, nm, hp*10
+        // Need at least the first 4 fields: samplenum, speed, nm, hp
         if (parts.Length < 4)
             return null;
 
@@ -37,10 +41,8 @@ public static class CsvLineParser
         if (!TryParseDouble(parts[2], out var nm))
             return null;
 
-        if (!TryParseDouble(parts[3], out var hpRaw))
+        if (!TryParseDouble(parts[3], out var hp))
             return null;
-
-        var hp = hpRaw / 10.0;
 
         return new Sample(sampleNumber, speedKmh, nm, hp, receivedAt);
     }

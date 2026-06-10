@@ -1,8 +1,10 @@
 # RollerGraph
 
 Cross-platform .NET 10 desktop app that reads dyno output from a serial USB
-connection (19200 BAUD) and plots HP and NM versus speed in real time, with
-auto-scaling axes and CSV logging/replay.
+connection (19200 BAUD) and plots HP versus speed in real time, with
+auto-scaling axes and CSV logging/replay. NM is captured and tracked but
+not drawn on the live chart - peak NM appears in the side panel and saved
+runs preserve it for later overlay.
 
 This is **Phase 1 + 2 + 3** of a phased delivery. All originally planned
 features plus the Phase 3 additions (saved runs, keyboard shortcuts, print)
@@ -15,7 +17,8 @@ are implemented.
 ### Phase 1 (foundational)
 
 - Connect to any USB serial port at 19200 BAUD (configurable in Settings)
-- Live dual-Y-axis chart: HP on the left, NM on the right, speed on the X axis
+- Live HP-vs-speed chart on a single Y-axis. NM is parsed and tracked but
+  not plotted live (kept in saved-run overlays + the peak-stats panel).
 - Grow-only "nice number" axis scaling (10, 25, 50, 100, 250, 500...)
 - Manual **Reset** button clears the chart and opens a new log file
 - **Replay** any previously logged (or hand-crafted) CSV file
@@ -97,19 +100,25 @@ Examples:
 Each line, newline-delimited (`\n` or `\r\n`):
 
 ```
-samplenum,speed,nm,hp_x10,NA,NA,NA,NA,NA
+samplenum,speed,nm,hp,NA,NA,NA,NA,NA
 ```
 
 | Field | Type | Meaning |
 |---|---|---|
 | `samplenum` | int | Sample counter, incrementing from dyno power-on |
 | `speed` | double | Speed in km/h |
-| `nm` | double | Torque in newton-meters (raw) |
-| `hp_x10` | double | Horsepower * 10 - app divides by 10 on read |
+| `nm` | double | Torque in newton-meters |
+| `hp` | double | Horsepower (as reported - apply per-channel adjustment for any unit conversion) |
 | 5..9 | any | Currently unused (`NA` placeholders are fine) |
 
 Only the first four fields are required; trailing fields may be present or
 absent. Bad lines are dropped silently and counted.
+
+The parser does **no** unit conversion - the wire value goes straight into
+the sample. If your dyno emits `HP*10` (i.e. `500` to mean `50.0 HP`), set
+the HP adjustment to `Factor = 0.1` in Settings -> Adjustments. Same idea
+for any drivetrain-loss or scaling correction; keeping the parser
+unit-agnostic means the same code path serves any dyno.
 
 ### Sample filtering
 
@@ -278,8 +287,8 @@ Devices appear as `COM3`, `COM4`, etc. No special permissions needed.
 
 A small fixture CSV ships in this repo at
 [`samples/fixture-run.csv`](samples/fixture-run.csv). Open the app, click
-**Replay CSV...**, and pick that file - you'll see HP and NM rise with speed
-and then taper off.
+**Replay CSV...**, and pick that file - you'll see the HP curve rise with
+speed and then taper off.
 
 ---
 

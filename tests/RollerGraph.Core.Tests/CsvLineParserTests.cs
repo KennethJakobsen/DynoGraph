@@ -8,10 +8,10 @@ public class CsvLineParserTests
     private static readonly DateTime FixedTime = new(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc);
 
     [Fact]
-    public void Parse_ValidLine_ReturnsSampleWithHpDividedByTen()
+    public void Parse_ValidLine_ReturnsSampleWithAllFieldsAsRead()
     {
-        // samplenum=123, speed=45.5, nm=78.2, hp*10=1423 -> hp=142.3
-        var sample = CsvLineParser.Parse("123,45.5,78.2,1423,NA,NA,NA,NA,NA", FixedTime);
+        // samplenum=123, speed=45.5, nm=78.2, hp=142.3 -> all pass through unchanged.
+        var sample = CsvLineParser.Parse("123,45.5,78.2,142.3,NA,NA,NA,NA,NA", FixedTime);
 
         sample.ShouldNotBeNull();
         sample!.Value.SampleNumber.ShouldBe(123);
@@ -22,12 +22,12 @@ public class CsvLineParserTests
     }
 
     [Fact]
-    public void Parse_IntegerHpField_DividesByTen()
+    public void Parse_IntegerHpField_PassesThroughUnchanged()
     {
         var sample = CsvLineParser.Parse("1,10,20,500,NA,NA,NA,NA,NA", FixedTime);
 
         sample.ShouldNotBeNull();
-        sample!.Value.Hp.ShouldBe(50.0);
+        sample!.Value.Hp.ShouldBe(500.0);
     }
 
     [Fact]
@@ -38,7 +38,7 @@ public class CsvLineParserTests
 
         sample.ShouldNotBeNull();
         sample!.Value.SampleNumber.ShouldBe(5);
-        sample.Value.Hp.ShouldBe(10.0);
+        sample.Value.Hp.ShouldBe(100.0);
     }
 
     [Theory]
@@ -66,7 +66,7 @@ public class CsvLineParserTests
         sample!.Value.SampleNumber.ShouldBe(10);
         sample.Value.SpeedKmh.ShouldBe(20.0);
         sample.Value.Nm.ShouldBe(30.0);
-        sample.Value.Hp.ShouldBe(40.0);
+        sample.Value.Hp.ShouldBe(400.0);
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public class CsvLineParserTests
     public void Parse_InvariantCulture_AcceptsDotDecimalRegardlessOfHost()
     {
         // Even in a locale that uses comma decimals, parser must accept dot.
-        var sample = CsvLineParser.Parse("1,2.5,3.5,45", FixedTime);
+        var sample = CsvLineParser.Parse("1,2.5,3.5,4.5", FixedTime);
         sample.ShouldNotBeNull();
         sample!.Value.SpeedKmh.ShouldBe(2.5);
         sample.Value.Nm.ShouldBe(3.5);

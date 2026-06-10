@@ -17,13 +17,13 @@ public class SamplePipelineTests
     public void Process_ValidLine_ReturnsAccepted()
     {
         var pipeline = new SamplePipeline(NewSettings(), SampleAdjuster.Identity);
-        var result = pipeline.Process("1,30,60,400", new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        var result = pipeline.Process("1,30,60,40", new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc));
 
         result.Outcome.ShouldBe(SamplePipelineOutcome.Accepted);
         result.Sample.ShouldNotBeNull();
         result.Sample!.Value.SpeedKmh.ShouldBe(30);
         result.Sample.Value.Nm.ShouldBe(60);
-        result.Sample.Value.Hp.ShouldBe(40);    // hp_x10 divided by 10
+        result.Sample.Value.Hp.ShouldBe(40);
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public class SamplePipelineTests
     public void Process_SpeedBelowMinSpeed_ReturnsFilteredOut()
     {
         var pipeline = new SamplePipeline(NewSettings(minSpeed: 10), SampleAdjuster.Identity);
-        var result = pipeline.Process("1,5,60,400", DateTime.UtcNow);
+        var result = pipeline.Process("1,5,60,40", DateTime.UtcNow);
 
         result.Outcome.ShouldBe(SamplePipelineOutcome.FilteredOut);
         result.Sample.ShouldBeNull();
@@ -59,7 +59,7 @@ public class SamplePipelineTests
     public void Process_SpeedAtMinSpeed_IsAccepted()
     {
         var pipeline = new SamplePipeline(NewSettings(minSpeed: 10), SampleAdjuster.Identity);
-        var result = pipeline.Process("1,10,60,400", DateTime.UtcNow);
+        var result = pipeline.Process("1,10,60,40", DateTime.UtcNow);
 
         result.Outcome.ShouldBe(SamplePipelineOutcome.Accepted);
     }
@@ -74,8 +74,8 @@ public class SamplePipelineTests
             new ChannelAdjustment { Factor = 2.0 });
         var pipeline = new SamplePipeline(NewSettings(), adjuster);
 
-        var result = pipeline.Process("1,30,60,400", DateTime.UtcNow);
-        result.Sample!.Value.Hp.ShouldBe(80);   // 400/10 * 2.0
+        var result = pipeline.Process("1,30,60,40", DateTime.UtcNow);
+        result.Sample!.Value.Hp.ShouldBe(80);   // 40 * 2.0
     }
 
     [Fact]
@@ -88,9 +88,9 @@ public class SamplePipelineTests
         var t = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
         // Feed three samples with hp = 10, 20, 30 -> smoothed hp = (10+20+30)/3 = 20
-        pipeline.Process("1,30,60,100", t).Sample!.Value.Hp.ShouldBe(10);   // window size 1
-        pipeline.Process("2,30,60,200", t).Sample!.Value.Hp.ShouldBe(15);   // window size 2
-        pipeline.Process("3,30,60,300", t).Sample!.Value.Hp.ShouldBe(20);   // window size 3
+        pipeline.Process("1,30,60,10", t).Sample!.Value.Hp.ShouldBe(10);   // window size 1
+        pipeline.Process("2,30,60,20", t).Sample!.Value.Hp.ShouldBe(15);   // window size 2
+        pipeline.Process("3,30,60,30", t).Sample!.Value.Hp.ShouldBe(20);   // window size 3
     }
 
     [Fact]
@@ -101,8 +101,8 @@ public class SamplePipelineTests
             SmoothingEnabled = false,
         };
 
-        var s1 = pipeline.Process("1,30,60,100", DateTime.UtcNow);
-        var s2 = pipeline.Process("2,30,60,200", DateTime.UtcNow);
+        var s1 = pipeline.Process("1,30,60,10", DateTime.UtcNow);
+        var s2 = pipeline.Process("2,30,60,20", DateTime.UtcNow);
         s1.Sample!.Value.Hp.ShouldBe(10);
         s2.Sample!.Value.Hp.ShouldBe(20);
     }
@@ -114,13 +114,13 @@ public class SamplePipelineTests
         {
             SmoothingEnabled = true,
         };
-        pipeline.Process("1,30,60,100", DateTime.UtcNow);   // hp 10 buffered
-        pipeline.Process("2,30,60,200", DateTime.UtcNow);   // hp 20 buffered
+        pipeline.Process("1,30,60,10", DateTime.UtcNow);   // hp 10 buffered
+        pipeline.Process("2,30,60,20", DateTime.UtcNow);   // hp 20 buffered
 
         pipeline.ResetSmoother();
 
         // First sample after reset must produce its own raw value (window size 1).
-        var s = pipeline.Process("3,30,60,300", DateTime.UtcNow);
+        var s = pipeline.Process("3,30,60,30", DateTime.UtcNow);
         s.Sample!.Value.Hp.ShouldBe(30);
     }
 
@@ -137,7 +137,7 @@ public class SamplePipelineTests
     public void Process_NegativeNm_ReturnsFilteredOut()
     {
         var pipeline = new SamplePipeline(NewSettings(), SampleAdjuster.Identity);
-        var result = pipeline.Process("1,30,-5,400", DateTime.UtcNow);
+        var result = pipeline.Process("1,30,-5,40", DateTime.UtcNow);
 
         result.Outcome.ShouldBe(SamplePipelineOutcome.FilteredOut);
         result.Sample.ShouldBeNull();
@@ -146,9 +146,8 @@ public class SamplePipelineTests
     [Fact]
     public void Process_NegativeHp_ReturnsFilteredOut()
     {
-        // hp_x10 of -10 -> hp = -1.0 after the parser /10 step.
         var pipeline = new SamplePipeline(NewSettings(), SampleAdjuster.Identity);
-        var result = pipeline.Process("1,30,60,-10", DateTime.UtcNow);
+        var result = pipeline.Process("1,30,60,-1", DateTime.UtcNow);
 
         result.Outcome.ShouldBe(SamplePipelineOutcome.FilteredOut);
         result.Sample.ShouldBeNull();
@@ -160,7 +159,7 @@ public class SamplePipelineTests
         // MinSpeedKmh defaults to 0 in NewSettings, so the -5 hits the
         // negative filter rather than the MinSpeed filter.
         var pipeline = new SamplePipeline(NewSettings(), SampleAdjuster.Identity);
-        var result = pipeline.Process("1,-5,60,400", DateTime.UtcNow);
+        var result = pipeline.Process("1,-5,60,40", DateTime.UtcNow);
 
         result.Outcome.ShouldBe(SamplePipelineOutcome.FilteredOut);
         result.Sample.ShouldBeNull();
@@ -190,7 +189,7 @@ public class SamplePipelineTests
             new ChannelAdjustment { Offset = -100 });   // hp 40 -> -60
         var pipeline = new SamplePipeline(NewSettings(), adjuster);
 
-        var result = pipeline.Process("1,30,60,400", DateTime.UtcNow);
+        var result = pipeline.Process("1,30,60,40", DateTime.UtcNow);
         result.Outcome.ShouldBe(SamplePipelineOutcome.FilteredOut);
     }
 
@@ -205,7 +204,7 @@ public class SamplePipelineTests
             ChannelAdjustment.Identity);
         var pipeline = new SamplePipeline(NewSettings(), adjuster);
 
-        var result = pipeline.Process("1,30,-5,400", DateTime.UtcNow);
+        var result = pipeline.Process("1,30,-5,40", DateTime.UtcNow);
         result.Outcome.ShouldBe(SamplePipelineOutcome.Accepted);
         result.Sample!.Value.Nm.ShouldBe(5);
     }
