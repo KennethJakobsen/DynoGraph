@@ -182,6 +182,57 @@ The published output ends up under
 
 ---
 
+## Continuous integration & releases
+
+GitHub Actions workflows live under `.github/workflows/`.
+
+### CI (`ci.yml`)
+
+Runs on every push to `main` and every pull request:
+
+1. Restores, builds, and tests on **Linux**, **macOS**, and **Windows** in parallel.
+2. Publishes test results to the PR check summary via `dorny/test-reporter`.
+3. Uploads `*.trx` files as workflow artifacts (14-day retention).
+
+A red test fails the build, blocking the PR.
+
+### Releases (`release.yml`)
+
+Triggered by pushing a version tag of the form `vX.Y.Z` (or `vX.Y.Z-rc.N`
+for a pre-release):
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Per tag, the workflow:
+
+1. Re-runs all tests on Linux/macOS/Windows.
+2. Publishes a self-contained, single-file binary for **four** runtime
+   identifiers in parallel: `osx-arm64`, `osx-x64`, `linux-x64`, `win-x64`.
+   Native libraries (SkiaSharp, HarfBuzz, AvaloniaNative) are extracted
+   into the executable via `IncludeNativeLibrariesForSelfExtract`.
+3. Compresses each output (`.zip` for macOS/Windows, `.tar.gz` for Linux)
+   and emits a SHA-256 checksum next to it.
+4. Uploads each RID's archive + checksum as a workflow artifact
+   (30-day retention).
+5. Creates a GitHub Release tagged with the version, attaches every
+   archive and checksum, and auto-generates release notes from the
+   commits since the previous tag. Tags containing `-` (e.g. `v1.0.0-rc.1`)
+   are marked as pre-releases.
+
+Tested locally: a publish for `osx-arm64` produces a single 45 MB
+executable with no satellite native libraries.
+
+### Manual / dry-run releases
+
+The release workflow also accepts a `workflow_dispatch` trigger from the
+Actions UI, which builds all four archives but skips the GitHub Release
+step. Useful for verifying packaging changes without cutting a real version.
+
+---
+
 ## Per-OS notes
 
 ### macOS

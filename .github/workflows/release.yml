@@ -1,0 +1,198 @@
+name: Release
+
+on:
+  push:
+    tags:
+      # Triggers on tags like v1.0.0, v1.2.3-rc.1, etc.
+      - 'v*.*.*'
+  # Allow ad-hoc runs from the Actions UI for testing.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag to use for artifact filenames (e.g. v0.0.0-test)"
+        required: true
+        default: v0.0.0-test
+
+permissions:
+  contents: write   # Required to create / update GitHub Releases.
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_VERSION: '10.0.x'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Build & test once before fanning out to per-RID publishes. A red test must
+  # fail the release.
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore RollerGraph.slnx
+
+      - name: Build
+        run: dotnet build RollerGraph.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test RollerGraph.slnx --configuration Release --no-build
+
+  # ---------------------------------------------------------------------------
+  # Per-RID publish + zip. Runs on the host that most closely matches the
+  # target. Each job uploads a single zip artifact named after the tag and RID.
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Publish ${{ matrix.rid }}
+    needs: test
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: osx-arm64
+            runner: macos-latest
+            archive: zip
+          - rid: osx-x64
+            runner: macos-latest
+            archive: zip
+          - rid: linux-x64
+            runner: ubuntu-latest
+            archive: tar.gz
+          - rid: win-x64
+            runner: windows-latest
+            archive: zip
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            tag="${{ github.event.inputs.tag }}"
+          else
+            tag="${GITHUB_REF#refs/tags/}"
+          fi
+          # Strip leading 'v' for the assembly version (1.2.3 not v1.2.3).
+          version="${tag#v}"
+          echo "tag=$tag"          >> "$GITHUB_OUTPUT"
+          echo "version=$version"  >> "$GITHUB_OUTPUT"
+          echo "Building $tag (assembly version $version)"
+
+      - name: Publish self-contained single-file
+        shell: bash
+        run: >
+          dotnet publish src/RollerGraph.App/RollerGraph.App.csproj
+          --configuration Release
+          --runtime ${{ matrix.rid }}
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -p:DebugType=embedded
+          -p:Version=${{ steps.version.outputs.version }}
+          -o publish/${{ matrix.rid }}
+
+      - name: Package (zip)
+        if: matrix.archive == 'zip'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd publish/${{ matrix.rid }}
+          # Strip .pdb files - PDBs are embedded into the executable via DebugType=embedded.
+          rm -f *.pdb
+          archive_name="RollerGraph-${{ steps.version.outputs.tag }}-${{ matrix.rid }}.zip"
+          if command -v zip >/dev/null 2>&1; then
+            zip -r9 "../../${archive_name}" .
+          else
+            # Windows runners don't have zip but they have PowerShell.
+            powershell -NoProfile -Command "Compress-Archive -Path * -DestinationPath '../../${archive_name}' -CompressionLevel Optimal"
+          fi
+          echo "ARCHIVE_PATH=${archive_name}" >> "$GITHUB_ENV"
+
+      - name: Package (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd publish/${{ matrix.rid }}
+          rm -f *.pdb
+          archive_name="RollerGraph-${{ steps.version.outputs.tag }}-${{ matrix.rid }}.tar.gz"
+          tar -czf "../../${archive_name}" .
+          echo "ARCHIVE_PATH=${archive_name}" >> "$GITHUB_ENV"
+
+      - name: Generate SHA-256 checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v shasum >/dev/null 2>&1; then
+            shasum -a 256 "${ARCHIVE_PATH}" > "${ARCHIVE_PATH}.sha256"
+          else
+            sha256sum "${ARCHIVE_PATH}" > "${ARCHIVE_PATH}.sha256"
+          fi
+          cat "${ARCHIVE_PATH}.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rollergraph-${{ matrix.rid }}
+          path: |
+            ${{ env.ARCHIVE_PATH }}
+            ${{ env.ARCHIVE_PATH }}.sha256
+          retention-days: 30
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Collect every per-RID artifact and publish a GitHub Release with them
+  # attached. Only runs for real version tags - workflow_dispatch test runs
+  # stop after the publish step (artifacts are still uploaded to the run page).
+  # ---------------------------------------------------------------------------
+  release:
+    name: Create GitHub Release
+    needs: publish
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download all RID artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: rollergraph-*
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -lh dist
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # Auto-generated release notes from PRs/commits between this and the
+          # previous tag. Edit the release in the UI afterwards if you want
+          # to add hand-written highlights.
+          generate_release_notes: true
+          # Pre-release for tags like v1.2.3-rc.1, v1.2.3-beta.
+          prerelease: ${{ contains(github.ref, '-') }}
+          files: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.sha256
+          fail_on_unmatched_files: true
