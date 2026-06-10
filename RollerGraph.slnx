@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/RollerGraph.App/RollerGraph.App.csproj" />
+    <Project Path="src/RollerGraph.Core/RollerGraph.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/RollerGraph.Core.Tests/RollerGraph.Core.Tests.csproj" />
+  </Folder>
+</Solution>

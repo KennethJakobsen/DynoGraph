@@ -1,0 +1,129 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:RollerGraph.App.ViewModels"
+        xmlns:lvc="using:LiveChartsCore.SkiaSharpView.Avalonia"
+        mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+        x:Class="RollerGraph.App.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Width="1200" Height="800"
+        MinWidth="800" MinHeight="500"
+        Title="RollerGraph">
+
+  <DockPanel LastChildFill="True">
+
+    <!-- Toolbar -->
+    <Border DockPanel.Dock="Top" Padding="10,8" BorderThickness="0,0,0,1"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+      <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+        <TextBlock Text="Port:" VerticalAlignment="Center"/>
+        <ComboBox MinWidth="200"
+                  ItemsSource="{Binding AvailablePorts}"
+                  SelectedItem="{Binding SelectedPort}"/>
+        <Button Content="Refresh" Command="{Binding RefreshPortsCommand}"/>
+        <Button Content="Connect" Command="{Binding ConnectCommand}"/>
+        <Button Content="Disconnect" Command="{Binding DisconnectCommand}"/>
+        <Separator Width="12"/>
+        <Button Content="Reset" Command="{Binding ResetCommand}"/>
+        <Button Content="Replay CSV..." Click="OnReplayClicked"/>
+        <Separator Width="12"/>
+        <CheckBox Content="Smoothing" IsChecked="{Binding SmoothingEnabled}"/>
+        <Separator Width="12"/>
+        <Button Content="Export PNG..." Click="OnExportPngClicked"
+                IsEnabled="{Binding Chart.SampleCount, Converter={x:Static vm:IntToBoolConverter.Instance}}"/>
+        <Button Content="Settings..." Click="OnSettingsClicked"/>
+      </StackPanel>
+    </Border>
+
+    <!-- Status bar -->
+    <Border DockPanel.Dock="Bottom" Padding="10,6" BorderThickness="0,1,0,0"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="16">
+          <TextBlock>
+            <Run Text="Samples: "/>
+            <Run Text="{Binding Chart.SampleCount}" FontWeight="SemiBold"/>
+          </TextBlock>
+          <TextBlock>
+            <Run Text="Bad lines: "/>
+            <Run Text="{Binding BadLineCount}" FontWeight="SemiBold"/>
+          </TextBlock>
+        </StackPanel>
+        <TextBlock Grid.Column="1" Text="{Binding LogFilePath}" Opacity="0.6"
+                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="2" Text="{Binding StatusMessage}" Opacity="0.85"/>
+      </Grid>
+    </Border>
+
+    <!-- Main content: chart + peak stats panel side-by-side -->
+    <Grid ColumnDefinitions="*,220" Margin="6">
+
+      <lvc:CartesianChart Grid.Column="0"
+                          Name="ChartHost"
+                          Series="{Binding Chart.Series}"
+                          XAxes="{Binding Chart.XAxes}"
+                          YAxes="{Binding Chart.YAxes}"/>
+
+      <!-- Peak stats panel -->
+      <Border Grid.Column="1" Margin="8,0,0,0" Padding="14"
+              CornerRadius="6"
+              BorderThickness="1"
+              BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+              Background="{DynamicResource SystemControlBackgroundBaseLowBrush}">
+        <StackPanel Spacing="14">
+          <TextBlock Text="PEAK STATS" FontSize="11" FontWeight="Bold" Opacity="0.6"/>
+
+          <StackPanel Spacing="4">
+            <TextBlock Text="Peak HP" FontSize="11" Opacity="0.7"/>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Text="{Binding Chart.PeakHp, StringFormat='{}{0:F1}'}"
+                         FontSize="28" FontWeight="Bold" Foreground="#FF8A00"/>
+              <TextBlock Text="HP" FontSize="14" VerticalAlignment="Bottom" Margin="0,0,0,4" Opacity="0.7"/>
+            </StackPanel>
+            <TextBlock FontSize="11" Opacity="0.6">
+              <Run Text="@ "/>
+              <Run Text="{Binding Chart.PeakHpSpeed, StringFormat='{}{0:F0}'}"/>
+              <Run Text=" km/h"/>
+            </TextBlock>
+          </StackPanel>
+
+          <Separator Opacity="0.3"/>
+
+          <StackPanel Spacing="4">
+            <TextBlock Text="Peak NM" FontSize="11" Opacity="0.7"/>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Text="{Binding Chart.PeakNm, StringFormat='{}{0:F1}'}"
+                         FontSize="28" FontWeight="Bold" Foreground="#00B8A9"/>
+              <TextBlock Text="NM" FontSize="14" VerticalAlignment="Bottom" Margin="0,0,0,4" Opacity="0.7"/>
+            </StackPanel>
+            <TextBlock FontSize="11" Opacity="0.6">
+              <Run Text="@ "/>
+              <Run Text="{Binding Chart.PeakNmSpeed, StringFormat='{}{0:F0}'}"/>
+              <Run Text=" km/h"/>
+            </TextBlock>
+          </StackPanel>
+
+          <Separator Opacity="0.3"/>
+
+          <StackPanel Spacing="4">
+            <TextBlock Text="Peak Speed" FontSize="11" Opacity="0.7"/>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Text="{Binding Chart.PeakSpeed, StringFormat='{}{0:F1}'}"
+                         FontSize="28" FontWeight="Bold"/>
+              <TextBlock Text="km/h" FontSize="14" VerticalAlignment="Bottom" Margin="0,0,0,4" Opacity="0.7"/>
+            </StackPanel>
+          </StackPanel>
+
+          <Separator Opacity="0.3"/>
+
+          <StackPanel Spacing="2">
+            <TextBlock Text="Connection" FontSize="11" Opacity="0.7"/>
+            <TextBlock Text="{Binding StatusMessage}" FontSize="13" TextWrapping="Wrap"/>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+    </Grid>
+  </DockPanel>
+</Window>

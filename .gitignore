@@ -1,0 +1,20 @@
+# Build output
+bin/
+obj/
+out/
+publish/
+*.user
+*.suo
+.vs/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Mac
+.DS_Store
+
+# Test results
+TestResults/
+coverage.*
