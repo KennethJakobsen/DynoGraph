@@ -47,7 +47,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Settings = settings ?? settingsStore?.Load() ?? new Settings();
 
         // Default the two serial seams from a single concrete factory.
-        var defaultFactory = new RjcpSerialSourceFactory();
+        var defaultFactory = new SystemSerialSourceFactory();
         _portEnumerator = portEnumerator ?? defaultFactory;
         var factory = sourceFactory ?? defaultFactory;
 
@@ -112,12 +112,17 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void RefreshPorts()
     {
-        var ports = _portEnumerator.EnumeratePorts();
+        var result = _portEnumerator.EnumeratePorts();
         AvailablePorts.Clear();
-        foreach (var p in ports.OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+        foreach (var p in result.Ports.OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
             AvailablePorts.Add(p);
         if (SelectedPort is not null && !AvailablePorts.Contains(SelectedPort))
             SelectedPort = AvailablePorts.FirstOrDefault();
+
+        // Surface driver-level failures so the user is not left staring at
+        // an empty dropdown wondering why nothing is listed.
+        if (!result.Succeeded)
+            StatusMessage = $"Could not enumerate serial ports: {result.ErrorMessage}";
     }
 
     [RelayCommand(CanExecute = nameof(CanConnect))]

@@ -237,8 +237,11 @@ step. Useful for verifying packaging changes without cutting a real version.
 
 ### macOS
 USB-serial devices typically appear as `/dev/cu.usbserial-*` or
-`/dev/cu.usbmodem-*`. If the dropdown is empty, your USB-serial chip likely
-needs its vendor driver installed (e.g. FTDI, CP210x, CH340).
+`/dev/cu.usbmodem-*`. The dropdown also lists the matching `/dev/tty.*`
+variants and unrelated ports such as Bluetooth and built-in debug consoles -
+always pick the `cu.*` entry that matches your USB-serial adapter. If no
+USB-serial entry appears at all, your USB-serial chip likely needs its
+vendor driver installed (e.g. FTDI, CP210x, CH340).
 
 ### Linux
 Devices appear as `/dev/ttyUSB*` (FTDI/CP210x) or `/dev/ttyACM*` (modems / CDC).
@@ -275,7 +278,7 @@ RollerGraph.slnx
 │   │   ├── Parsing/               # CsvLineParser
 │   │   ├── Pipeline/              # SamplePipeline (parse + adjust + filter + smooth)
 │   │   ├── Scaling/               # NiceNumber
-│   │   ├── Serial/                # ISerialSource, RjcpSerialSource, ReplaySerialSource, LineBuffer
+│   │   ├── Serial/                # ISerialSource, SystemSerialSource, ReplaySerialSource, LineBuffer
 │   │   ├── Smoothing/             # RollingAverage, SampleSmoother
 │   │   └── Storage/               # AppDataPaths, FileSavedRunStore, RunColorPalette, RunSlugger
 │   └── RollerGraph.App/           # Avalonia 12 app
@@ -299,7 +302,7 @@ RollerGraph.slnx
 | UI | Avalonia 12 | MIT |
 | MVVM | CommunityToolkit.Mvvm | MIT |
 | Charts | LiveChartsCore.SkiaSharpView.Avalonia | MIT |
-| Serial | RJCP SerialPortStream | MS-PL |
+| Serial | System.IO.Ports | MIT |
 | Tests | xUnit + Shouldly | Apache 2.0 / BSD |
 
 All dependencies are free and open-source.

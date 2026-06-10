@@ -32,7 +32,7 @@ public partial class App : Application
             ISettingsStore settingsStore = SettingsStore.Default();
             ISavedRunStore runStore = FileSavedRunStore.Default();
             ISessionLogger logger = new CsvSessionLogger(CsvSessionLogger.DefaultLogDirectory());
-            var serialFactory = new RjcpSerialSourceFactory();   // also implements IPortEnumerator
+            var serialFactory = new SystemSerialSourceFactory();   // also implements IPortEnumerator
 
             var vm = new MainWindowViewModel(
                 dispatcher,
