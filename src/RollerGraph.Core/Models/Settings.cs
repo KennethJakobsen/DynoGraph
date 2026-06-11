@@ -17,7 +17,7 @@ public sealed record Settings
     public double MinSpeedKmh { get; init; } = 5.0;
 
     /// <summary>
-    /// Rolling-average window size applied when the smoothing toggle is on.
+    /// Peak-preserving smoothing window size applied when the smoothing toggle is on.
     /// 1 disables smoothing entirely; the UI only takes effect when &gt;= 2.
     /// </summary>
     public int SmoothingWindow { get; init; } = 5;

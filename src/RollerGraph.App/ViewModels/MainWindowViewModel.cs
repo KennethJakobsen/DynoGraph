@@ -65,6 +65,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _connection.SampleAccepted += OnSampleAccepted;
         _connection.BadLineReceived += OnBadLineReceived;
         _connection.ErrorOccurred += OnConnectionError;
+        _connection.RunStopped += OnRunStopped;
+        _connection.RunStarted += OnRunStarted;
 
         AvailablePorts = new ObservableCollection<string>();
         RefreshPorts();
@@ -162,13 +164,33 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private bool CanDisconnect() => IsConnected;
 
     [RelayCommand]
-    private void Reset()
+    private async Task ResetAsync()
     {
         Chart.Reset();
         BadLineCount = 0;
         _liveSamples.Clear();
+
+        if (IsConnected)
+        {
+            try
+            {
+                StatusMessage = await _connection.RestartAsync(Settings, SmoothingEnabled);
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Reset failed: {ex.Message}";
+            }
+            finally
+            {
+                IsConnected = _connection.IsConnected;
+                LogFilePath = _connection.LogFilePath;
+                ConnectCommand.NotifyCanExecuteChanged();
+                DisconnectCommand.NotifyCanExecuteChanged();
+            }
+            return;
+        }
+
         _connection.ResetSmoother();
-        _connection.StartNewLogSession();
         LogFilePath = _connection.LogFilePath;
     }
 
@@ -310,11 +332,26 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     private void OnSampleAccepted(object? sender, SampleAcceptedEventArgs e)
     {
-        _liveSamples.Add(e.Sample);
-        Chart.AppendSample(e.Sample);
+        _liveSamples.Add(e.MeasurementSample);
+        Chart.AppendSample(e.Sample, e.MeasurementSample);
     }
 
     private void OnBadLineReceived(object? sender, EventArgs e) => BadLineCount++;
+
+    private void OnRunStopped(object? sender, EventArgs e)
+    {
+        LogFilePath = _connection.LogFilePath;
+        StatusMessage = "Run stopped - waiting for next measurement.";
+    }
+
+    private void OnRunStarted(object? sender, EventArgs e)
+    {
+        Chart.Reset();
+        BadLineCount = 0;
+        _liveSamples.Clear();
+        LogFilePath = _connection.LogFilePath;
+        StatusMessage = "New run started";
+    }
 
     private void OnConnectionError(object? sender, ConnectionErrorEventArgs e)
     {

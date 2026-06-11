@@ -13,7 +13,13 @@ namespace RollerGraph.App.Connection;
 public sealed class SampleAcceptedEventArgs : EventArgs
 {
     public Sample Sample { get; }
-    public SampleAcceptedEventArgs(Sample sample) { Sample = sample; }
+    public Sample MeasurementSample { get; }
+
+    public SampleAcceptedEventArgs(Sample sample, Sample measurementSample)
+    {
+        Sample = sample;
+        MeasurementSample = measurementSample;
+    }
 }
 
 /// <summary>
@@ -38,11 +44,28 @@ public sealed class ConnectionErrorEventArgs : EventArgs
 /// </summary>
 public sealed class ConnectionController : IDisposable
 {
+    private enum ActiveSourceKind
+    {
+        None,
+        Live,
+        Replay,
+    }
+
+    private readonly record struct ActiveSource(
+        ActiveSourceKind Kind,
+        string? PortName = null,
+        string? ReplayPath = null,
+        TimeSpan? ReplayInterval = null);
+
     private readonly IUiDispatcher _dispatcher;
     private readonly ISerialSourceFactory _sourceFactory;
     private readonly ISessionLogger _logger;
     private ISerialSource? _source;
     private SamplePipeline? _pipeline;
+    private ActiveSource _activeSource;
+    private bool _hasMeasurementSpeed;
+    private bool _isRunStopped;
+    private double _lastMeasurementSpeed;
 
     public ConnectionController(
         IUiDispatcher dispatcher,
@@ -66,13 +89,19 @@ public sealed class ConnectionController : IDisposable
     /// <summary>Fired on the UI thread when the underlying source raises an error.</summary>
     public event EventHandler<ConnectionErrorEventArgs>? ErrorOccurred;
 
+    /// <summary>Fired on the UI thread when a speed drop closes the current run.</summary>
+    public event EventHandler? RunStopped;
+
+    /// <summary>Fired on the UI thread before the first sample of an auto-detected new run.</summary>
+    public event EventHandler? RunStarted;
+
     /// <summary>True when a source is active (live or replay).</summary>
     public bool IsConnected { get; private set; }
 
     /// <summary>Current session log file path, or null when no session is open.</summary>
     public string? LogFilePath { get; private set; }
 
-    /// <summary>True when the pipeline should apply rolling-average smoothing.</summary>
+    /// <summary>True when the pipeline should apply peak-preserving smoothing.</summary>
     public bool SmoothingEnabled
     {
         get => _pipeline?.SmoothingEnabled ?? false;
@@ -98,6 +127,7 @@ public sealed class ConnectionController : IDisposable
         await src.StartAsync();
         LogFilePath = _logger.BeginSession();
         IsConnected = true;
+        RememberLiveSource(portName);
         return $"Connected to {portName} @ {settings.BaudRate} baud";
     }
 
@@ -113,16 +143,21 @@ public sealed class ConnectionController : IDisposable
         // Replay also gets a log file so the parsed stream is captured.
         LogFilePath = _logger.BeginSession();
         IsConnected = true;
+        RememberReplaySource(filePath, interval);
         return $"Replaying {Path.GetFileName(filePath)}";
     }
 
     /// <summary>Stops the current source and closes the log file.</summary>
-    public async Task DisconnectAsync()
+    public Task DisconnectAsync() => DisconnectAsync(clearActiveSource: true);
+
+    private async Task DisconnectAsync(bool clearActiveSource)
     {
         if (_source is null)
         {
             LogFilePath = null;
             IsConnected = false;
+            ResetRunTracking();
+            if (clearActiveSource) ClearActiveSource();
             return;
         }
         try { await _source.StopAsync(); }
@@ -132,13 +167,38 @@ public sealed class ConnectionController : IDisposable
             _logger.EndSession();
             LogFilePath = null;
             IsConnected = false;
+            ResetRunTracking();
+            if (clearActiveSource) ClearActiveSource();
         }
     }
 
     /// <summary>
-    /// Closes and reopens the log file. Used by the Reset action so a fresh
-    /// session boundary lines up with the cleared chart. Safe to call when
-    /// no session is active.
+    /// Restarts the active live/replay source and opens a fresh log session.
+    /// This gives Reset the same serial-port boundary as a manual
+    /// disconnect/connect without losing which source mode is active.
+    /// </summary>
+    public async Task<string> RestartAsync(Settings settings, bool smoothingEnabled)
+    {
+        if (!IsConnected)
+            return "Disconnected";
+
+        var activeSource = _activeSource;
+
+        await DisconnectAsync(clearActiveSource: false);
+
+        return activeSource.Kind switch
+        {
+            ActiveSourceKind.Live when !string.IsNullOrWhiteSpace(activeSource.PortName) =>
+                await ConnectAsync(activeSource.PortName, settings, smoothingEnabled),
+            ActiveSourceKind.Replay when !string.IsNullOrWhiteSpace(activeSource.ReplayPath) =>
+                await ReplayAsync(activeSource.ReplayPath, settings, smoothingEnabled, activeSource.ReplayInterval),
+            _ => "Disconnected",
+        };
+    }
+
+    /// <summary>
+    /// Closes and reopens the log file without touching the source. Safe to
+    /// call when no session is active.
     /// </summary>
     public void StartNewLogSession()
     {
@@ -168,6 +228,7 @@ public sealed class ConnectionController : IDisposable
         // Always start with a fresh smoother for a new connection/replay.
         var adjuster = SampleAdjuster.FromSettingsOrIdentity(settings);
         _pipeline = new SamplePipeline(settings, adjuster) { SmoothingEnabled = smoothingEnabled };
+        ResetRunTracking();
         _source = source;
         source.LineReceived += OnLineReceived;
         source.ErrorOccurred += OnErrorOccurred;
@@ -184,24 +245,69 @@ public sealed class ConnectionController : IDisposable
 
     private void OnLineReceived(object? sender, LineReceivedEventArgs e)
     {
-        // Log raw line on the background thread (logger is thread-safe).
-        _logger.Append(e.Line, e.ReceivedAt);
-
         if (_pipeline is null) return;
         var result = _pipeline.Process(e.Line, e.ReceivedAt);
         switch (result.Outcome)
         {
             case SamplePipelineOutcome.Accepted:
                 var sample = result.Sample!.Value;
-                _dispatcher.Post(() => SampleAccepted?.Invoke(this, new SampleAcceptedEventArgs(sample)));
+                var measurementSample = result.MeasurementSample!.Value;
+                if (HandleAcceptedMeasurement(measurementSample))
+                    return;
+
+                _logger.Append(e.Line, e.ReceivedAt);
+                _dispatcher.Post(() => SampleAccepted?.Invoke(this, new SampleAcceptedEventArgs(sample, measurementSample)));
                 break;
             case SamplePipelineOutcome.BadLine:
+                if (_isRunStopped) return;
+                _logger.Append(e.Line, e.ReceivedAt);
                 _dispatcher.Post(() => BadLineReceived?.Invoke(this, EventArgs.Empty));
                 break;
             case SamplePipelineOutcome.FilteredOut:
+                if (!_isRunStopped)
+                    _logger.Append(e.Line, e.ReceivedAt);
                 // Silent drop - intentional.
                 break;
         }
+    }
+
+    private bool HandleAcceptedMeasurement(Sample measurementSample)
+    {
+        if (!_hasMeasurementSpeed)
+        {
+            _hasMeasurementSpeed = true;
+            _lastMeasurementSpeed = measurementSample.SpeedKmh;
+            return false;
+        }
+
+        if (_isRunStopped)
+        {
+            if (measurementSample.SpeedKmh <= _lastMeasurementSpeed)
+            {
+                _lastMeasurementSpeed = measurementSample.SpeedKmh;
+                return true;
+            }
+
+            _isRunStopped = false;
+            _lastMeasurementSpeed = measurementSample.SpeedKmh;
+            _pipeline?.ResetSmoother();
+            LogFilePath = _logger.BeginSession();
+            _dispatcher.Post(() => RunStarted?.Invoke(this, EventArgs.Empty));
+            return false;
+        }
+
+        if (measurementSample.SpeedKmh < _lastMeasurementSpeed)
+        {
+            _isRunStopped = true;
+            _lastMeasurementSpeed = measurementSample.SpeedKmh;
+            _logger.EndSession();
+            LogFilePath = null;
+            _dispatcher.Post(() => RunStopped?.Invoke(this, EventArgs.Empty));
+            return true;
+        }
+
+        _lastMeasurementSpeed = measurementSample.SpeedKmh;
+        return false;
     }
 
     private void OnErrorOccurred(object? sender, Exception ex)
@@ -212,8 +318,32 @@ public sealed class ConnectionController : IDisposable
             _logger.EndSession();
             LogFilePath = null;
             IsConnected = false;
+            ResetRunTracking();
+            ClearActiveSource();
             ErrorOccurred?.Invoke(this, new ConnectionErrorEventArgs(ex));
         });
+    }
+
+    private void ResetRunTracking()
+    {
+        _hasMeasurementSpeed = false;
+        _isRunStopped = false;
+        _lastMeasurementSpeed = 0;
+    }
+
+    private void RememberLiveSource(string portName)
+    {
+        _activeSource = new ActiveSource(ActiveSourceKind.Live, PortName: portName);
+    }
+
+    private void RememberReplaySource(string filePath, TimeSpan? interval)
+    {
+        _activeSource = new ActiveSource(ActiveSourceKind.Replay, ReplayPath: filePath, ReplayInterval: interval);
+    }
+
+    private void ClearActiveSource()
+    {
+        _activeSource = default;
     }
 
     public void Dispose()

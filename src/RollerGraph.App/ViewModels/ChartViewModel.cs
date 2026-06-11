@@ -52,25 +52,29 @@ public sealed partial class ChartViewModel : ObservableObject
     public ICartesianAxis[] YAxes => _renderer.YAxes;
 
     /// <summary>Appends a sample to the chart and updates peak stats. UI thread only.</summary>
-    public void AppendSample(Sample sample)
+    public void AppendSample(Sample sample) => AppendSample(sample, sample);
+
+    /// <summary>Appends a plot sample and updates peak stats from the measurement sample. UI thread only.</summary>
+    public void AppendSample(Sample sample, Sample measurementSample)
     {
         _renderer.AppendLivePoint(sample);
         SampleCount++;
 
         // Peak stats (note: peak NM may occur at a different speed than peak HP).
-        if (sample.Hp > PeakHp)
+        if (measurementSample.Hp > PeakHp)
         {
-            PeakHp = sample.Hp;
-            PeakHpSpeed = sample.SpeedKmh;
+            PeakHp = measurementSample.Hp;
+            PeakHpSpeed = measurementSample.SpeedKmh;
+            _renderer.UpdateLivePeakPoint(measurementSample);
         }
-        if (sample.Nm > PeakNm)
+        if (measurementSample.Nm > PeakNm)
         {
-            PeakNm = sample.Nm;
-            PeakNmSpeed = sample.SpeedKmh;
+            PeakNm = measurementSample.Nm;
+            PeakNmSpeed = measurementSample.SpeedKmh;
         }
-        if (sample.SpeedKmh > PeakSpeed)
+        if (measurementSample.SpeedKmh > PeakSpeed)
         {
-            PeakSpeed = sample.SpeedKmh;
+            PeakSpeed = measurementSample.SpeedKmh;
         }
     }
 
@@ -96,4 +100,7 @@ public sealed partial class ChartViewModel : ObservableObject
     public void RemoveSavedRun(string name) => _renderer.RemoveOverlay(name);
     public void SetSavedRunVisible(string name, bool isVisible) => _renderer.SetOverlayVisible(name, isVisible);
     public void ClearSavedRuns() => _renderer.ClearOverlays();
+
+    public ChartSnapshotStats ToSnapshotStats() =>
+        new(PeakHp, PeakHpSpeed, PeakNm, PeakNmSpeed, PeakSpeed);
 }

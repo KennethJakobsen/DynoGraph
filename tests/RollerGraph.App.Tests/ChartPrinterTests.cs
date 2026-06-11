@@ -12,14 +12,16 @@ public class ChartPrinterTests
         public string? Path { get; private set; }
         public int Width { get; private set; }
         public int Height { get; private set; }
+        public ChartSnapshotStats? Stats { get; private set; }
         public Exception? Throw { get; init; }
 
-        public void SaveAsPng(string destinationPath, int width, int height)
+        public void SaveAsPng(string destinationPath, int width, int height, ChartSnapshotStats? stats = null)
         {
             if (Throw is not null) throw Throw;
             Path = destinationPath;
             Width = width;
             Height = height;
+            Stats = stats;
         }
     }
 
@@ -77,5 +79,18 @@ public class ChartPrinterTests
         r.Outcome.ShouldBe(ChartPrintOutcome.Failed);
         r.ErrorMessage.ShouldBe("no gpu");
         launcher.Launched.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task PrintAsync_PassesPeakStatsToSnapshotter()
+    {
+        var snap = new RecordingSnapshotter();
+        var launcher = new StubLauncher();
+        var stats = new ChartSnapshotStats(10, 20, 30, 40, 50);
+        var printer = new ChartPrinter(snap, launcher, () => stats);
+
+        await printer.PrintAsync();
+
+        snap.Stats.ShouldBe(stats);
     }
 }

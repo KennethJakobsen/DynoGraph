@@ -79,7 +79,7 @@ public class SamplePipelineTests
     }
 
     [Fact]
-    public void Process_WithSmoothing_AveragesOverWindow()
+    public void Process_WithSmoothing_UsesTopHpOverWindow()
     {
         var pipeline = new SamplePipeline(NewSettings(smoothingWindow: 3), SampleAdjuster.Identity)
         {
@@ -87,10 +87,27 @@ public class SamplePipelineTests
         };
         var t = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
-        // Feed three samples with hp = 10, 20, 30 -> smoothed hp = (10+20+30)/3 = 20
+        // Feed three samples with hp = 10, 20, 30 -> plotted hp holds the top value 30
         pipeline.Process("1,30,60,10", t).Sample!.Value.Hp.ShouldBe(10);   // window size 1
-        pipeline.Process("2,30,60,20", t).Sample!.Value.Hp.ShouldBe(15);   // window size 2
-        pipeline.Process("3,30,60,30", t).Sample!.Value.Hp.ShouldBe(20);   // window size 3
+        pipeline.Process("2,30,60,20", t).Sample!.Value.Hp.ShouldBe(20);   // window size 2
+        pipeline.Process("3,30,60,30", t).Sample!.Value.Hp.ShouldBe(30);   // window size 3
+    }
+
+    [Fact]
+    public void Process_WithSmoothing_PreservesUnsmoothedMeasurementSample()
+    {
+        var pipeline = new SamplePipeline(NewSettings(smoothingWindow: 3), SampleAdjuster.Identity)
+        {
+            SmoothingEnabled = true,
+        };
+        var t = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        pipeline.Process("1,30,60,10", t);
+        pipeline.Process("2,30,60,30", t);
+        var result = pipeline.Process("3,30,60,20", t);
+
+        result.Sample!.Value.Hp.ShouldBe(30);
+        result.MeasurementSample!.Value.Hp.ShouldBe(20);
     }
 
     [Fact]

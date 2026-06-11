@@ -3,19 +3,19 @@ using RollerGraph.Core.Models;
 namespace RollerGraph.Core.Smoothing;
 
 /// <summary>
-/// Applies a triple rolling average (HP, NM, speed) to a stream of samples.
+/// Applies peak-preserving smoothing to a stream of samples.
 /// Designed to be unit-testable in isolation from the UI.
 /// </summary>
 public sealed class SampleSmoother
 {
-    private readonly RollingAverage _hp;
-    private readonly RollingAverage _nm;
+    private readonly RollingMaximum _hp;
+    private readonly RollingMaximum _nm;
     private readonly RollingAverage _speed;
 
     public SampleSmoother(int windowSize)
     {
-        _hp = new RollingAverage(windowSize);
-        _nm = new RollingAverage(windowSize);
+        _hp = new RollingMaximum(windowSize);
+        _nm = new RollingMaximum(windowSize);
         _speed = new RollingAverage(windowSize);
         WindowSize = windowSize;
     }

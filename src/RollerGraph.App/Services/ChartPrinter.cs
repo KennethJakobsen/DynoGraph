@@ -15,13 +15,18 @@ public sealed class ChartPrinter : IChartPrinter
 
     private readonly IChartSnapshotter _snapshotter;
     private readonly IPrintLauncher _launcher;
+    private readonly Func<ChartSnapshotStats?>? _statsProvider;
 
-    public ChartPrinter(IChartSnapshotter snapshotter, IPrintLauncher launcher)
+    public ChartPrinter(
+        IChartSnapshotter snapshotter,
+        IPrintLauncher launcher,
+        Func<ChartSnapshotStats?>? statsProvider = null)
     {
         ArgumentNullException.ThrowIfNull(snapshotter);
         ArgumentNullException.ThrowIfNull(launcher);
         _snapshotter = snapshotter;
         _launcher = launcher;
+        _statsProvider = statsProvider;
     }
 
     public async Task<ChartPrintResult> PrintAsync()
@@ -30,7 +35,7 @@ public sealed class ChartPrinter : IChartPrinter
         {
             var tmpPng = Path.Combine(Path.GetTempPath(),
                 $"rollergraph-print-{DateTime.Now:yyyyMMdd-HHmmss}.png");
-            _snapshotter.SaveAsPng(tmpPng, PrintWidth, PrintHeight);
+            _snapshotter.SaveAsPng(tmpPng, PrintWidth, PrintHeight, _statsProvider?.Invoke());
 
             if (!_launcher.IsSupported)
             {

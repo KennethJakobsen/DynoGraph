@@ -21,13 +21,17 @@ public enum SamplePipelineOutcome
 
 /// <summary>Per-line result returned by <see cref="SamplePipeline.Process"/>.</summary>
 /// <param name="Outcome">Why the pipeline chose this verdict.</param>
-/// <param name="Sample">The processed sample when <see cref="Outcome"/> is <see cref="SamplePipelineOutcome.Accepted"/>.</param>
-public readonly record struct SamplePipelineResult(SamplePipelineOutcome Outcome, Sample? Sample = null);
+/// <param name="Sample">The plot-ready sample when <see cref="Outcome"/> is <see cref="SamplePipelineOutcome.Accepted"/>.</param>
+/// <param name="MeasurementSample">The adjusted, unsmoothed measurement sample used for peak stats.</param>
+public readonly record struct SamplePipelineResult(
+    SamplePipelineOutcome Outcome,
+    Sample? Sample = null,
+    Sample? MeasurementSample = null);
 
 /// <summary>
 /// Stateful per-session pipeline that turns raw CSV lines into ready-to-plot
 /// <see cref="Sample"/> values. Combines parsing, per-channel adjustment,
-/// MinSpeed filtering, and optional rolling-average smoothing.
+/// MinSpeed filtering, and optional peak-preserving smoothing.
 ///
 /// Single responsibility: transform one raw line into one pipeline result.
 /// Owns no IO, no UI dependency, no concurrency primitives - call from any
@@ -76,12 +80,14 @@ public sealed class SamplePipeline
         if (adjusted.SpeedKmh < _settings.MinSpeedKmh)
             return new SamplePipelineResult(SamplePipelineOutcome.FilteredOut);
 
+        var measurement = adjusted;
+
         if (SmoothingEnabled && _settings.SmoothingWindow > 1)
         {
             _smoother ??= new SampleSmoother(_settings.SmoothingWindow);
             adjusted = _smoother.Smooth(adjusted);
         }
 
-        return new SamplePipelineResult(SamplePipelineOutcome.Accepted, adjusted);
+        return new SamplePipelineResult(SamplePipelineOutcome.Accepted, adjusted, measurement);
     }
 }

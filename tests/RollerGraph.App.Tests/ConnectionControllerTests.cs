@@ -190,6 +190,42 @@ public class ConnectionControllerTests
     }
 
     [Fact]
+    public async Task RestartAsync_LiveConnection_ReopensSourceAndStartsFreshLog()
+    {
+        var (controller, factory, logger) = NewController();
+        var settings = Settings();
+        await controller.ConnectAsync("COM3", settings, false);
+        var firstPath = controller.LogFilePath;
+
+        var status = await controller.RestartAsync(settings, false);
+
+        status.ShouldContain("COM3");
+        controller.IsConnected.ShouldBeTrue();
+        factory.LiveSource.StopCount.ShouldBe(1);
+        factory.LiveSource.StartCount.ShouldBe(2);
+        logger.SessionsEnded.ShouldBe(1);
+        logger.SessionsStarted.ShouldBe(2);
+        controller.LogFilePath.ShouldNotBe(firstPath);
+    }
+
+    [Fact]
+    public async Task RestartAsync_ReplayConnection_ReplaysSameFile()
+    {
+        var (controller, factory, logger) = NewController();
+        var settings = Settings();
+        await controller.ReplayAsync("/tmp/fake.csv", settings, false, TimeSpan.Zero);
+
+        var status = await controller.RestartAsync(settings, false);
+
+        status.ShouldContain("fake");
+        controller.IsConnected.ShouldBeTrue();
+        factory.ReplaySource.StopCount.ShouldBe(1);
+        factory.ReplaySource.StartCount.ShouldBe(2);
+        factory.LastReplayPath.ShouldBe("/tmp/fake.csv");
+        logger.SessionsStarted.ShouldBe(2);
+    }
+
+    [Fact]
     public void StartNewLogSession_WhenDisconnected_IsNoOp()
     {
         var (controller, _, logger) = NewController();
@@ -217,6 +253,76 @@ public class ConnectionControllerTests
         factory.LiveSource.EmitLine("3,30,60,30");   // fresh window: hp 30
 
         samples[^1].Hp.ShouldBe(30);
+    }
+
+    [Fact]
+    public async Task SmoothingEnabled_RaisesSmoothedSampleAndRawMeasurementSample()
+    {
+        var (controller, factory, _) = NewController();
+        var settings = new Settings { MinSpeedKmh = 0, SmoothingWindow = 3 };
+        await controller.ConnectAsync("COM3", settings, smoothingEnabled: true);
+
+        Sample? plotted = null;
+        Sample? measurement = null;
+        controller.SampleAccepted += (_, args) =>
+        {
+            plotted = args.Sample;
+            measurement = args.MeasurementSample;
+        };
+
+        factory.LiveSource.EmitLine("1,30,60,10");
+        factory.LiveSource.EmitLine("2,30,60,30");
+        factory.LiveSource.EmitLine("3,30,60,20");
+
+        plotted!.Value.Hp.ShouldBe(30);
+        measurement!.Value.Hp.ShouldBe(20);
+    }
+
+    [Fact]
+    public async Task SpeedDrop_StopsRunClosesLogAndSuppressesCoastDownSamples()
+    {
+        var (controller, factory, logger) = NewController();
+        await controller.ConnectAsync("COM3", Settings(), false);
+
+        var samples = new List<Sample>();
+        var stopped = 0;
+        controller.SampleAccepted += (_, args) => samples.Add(args.MeasurementSample);
+        controller.RunStopped += (_, _) => stopped++;
+
+        factory.LiveSource.EmitLine("1,10,60,10");
+        factory.LiveSource.EmitLine("2,20,70,20");
+        factory.LiveSource.EmitLine("3,15,80,30");
+        factory.LiveSource.EmitLine("4,12,90,40");
+
+        stopped.ShouldBe(1);
+        samples.Select(s => s.SampleNumber).ShouldBe(new[] { 1, 2 });
+        logger.SessionsEnded.ShouldBe(1);
+        controller.LogFilePath.ShouldBeNull();
+        logger.AppendedLines.Select(l => l.Line).ShouldBe(new[] { "1,10,60,10", "2,20,70,20" });
+    }
+
+    [Fact]
+    public async Task RisingSpeedAfterStopped_StartsNewRunAndNewLog()
+    {
+        var (controller, factory, logger) = NewController();
+        await controller.ConnectAsync("COM3", Settings(), false);
+
+        var started = 0;
+        var samples = new List<Sample>();
+        controller.RunStarted += (_, _) => started++;
+        controller.SampleAccepted += (_, args) => samples.Add(args.MeasurementSample);
+
+        factory.LiveSource.EmitLine("1,10,60,10");
+        factory.LiveSource.EmitLine("2,20,70,20");
+        factory.LiveSource.EmitLine("3,15,80,30"); // stop
+        factory.LiveSource.EmitLine("4,12,90,40"); // still stopped
+        factory.LiveSource.EmitLine("5,18,100,50"); // new run
+
+        started.ShouldBe(1);
+        samples.Select(s => s.SampleNumber).ShouldBe(new[] { 1, 2, 5 });
+        logger.SessionsStarted.ShouldBe(2);
+        controller.LogFilePath.ShouldNotBeNull();
+        logger.AppendedLines.Select(l => l.Line).ShouldBe(new[] { "1,10,60,10", "2,20,70,20", "5,18,100,50" });
     }
 
     [Fact]

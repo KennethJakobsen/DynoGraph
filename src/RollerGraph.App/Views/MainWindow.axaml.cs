@@ -24,6 +24,12 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        if (OperatingSystem.IsMacOS())
+        {
+            var fallbackMenu = this.FindControl<Menu>("FallbackMenuBar");
+            if (fallbackMenu is not null)
+                fallbackMenu.IsVisible = false;
+        }
         Opened += OnWindowOpened;
         AddHandler(KeyDownEvent, OnPreviewKeyDown, RoutingStrategies.Tunnel);
     }
@@ -48,8 +54,12 @@ public partial class MainWindow : Window
                 snapshotter,
                 () => (
                     (int)Math.Max(800, chartControl.Bounds.Width),
-                    (int)Math.Max(450, chartControl.Bounds.Height)));
-            vm.ChartPrinter = new ChartPrinter(snapshotter, PlatformPrintLauncher.Default());
+                    (int)Math.Max(450, chartControl.Bounds.Height)),
+                () => vm.Chart.ToSnapshotStats());
+            vm.ChartPrinter = new ChartPrinter(
+                snapshotter,
+                PlatformPrintLauncher.Default(),
+                () => vm.Chart.ToSnapshotStats());
         }
     }
 

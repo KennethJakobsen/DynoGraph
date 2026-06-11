@@ -29,13 +29,16 @@ public interface IChartRenderer
     /// <summary>Add a single live sample point to the live HP series.</summary>
     void AppendLivePoint(Sample sample);
 
+    /// <summary>Show the current raw HP peak on top of the live HP chart.</summary>
+    void UpdateLivePeakPoint(Sample sample);
+
     /// <summary>Clear all live points and snap the axis limits back to the defaults.</summary>
     void ResetLive();
 
     /// <summary>Recompute the default axis maxima from the given settings.</summary>
     void UpdateDefaults(Settings settings);
 
-    /// <summary>Add (or replace) a saved-run overlay as two series (HP + NM).</summary>
+    /// <summary>Add (or replace) a saved-run overlay as an HP series.</summary>
     void AddOverlay(SavedRun run);
 
     /// <summary>Remove the named overlay from the chart, if present.</summary>

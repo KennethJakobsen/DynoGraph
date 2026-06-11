@@ -15,6 +15,7 @@ public sealed class AvaloniaChartExporter : IChartExporter
     private readonly Window _owner;
     private readonly IChartSnapshotter _snapshotter;
     private readonly Func<(int Width, int Height)> _sizeProvider;
+    private readonly Func<ChartSnapshotStats?>? _statsProvider;
 
     /// <param name="owner">Owner window used to host the file-save picker.</param>
     /// <param name="snapshotter">Renders the actual PNG bytes.</param>
@@ -22,7 +23,8 @@ public sealed class AvaloniaChartExporter : IChartExporter
     public AvaloniaChartExporter(
         Window owner,
         IChartSnapshotter snapshotter,
-        Func<(int Width, int Height)> sizeProvider)
+        Func<(int Width, int Height)> sizeProvider,
+        Func<ChartSnapshotStats?>? statsProvider = null)
     {
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentNullException.ThrowIfNull(snapshotter);
@@ -30,6 +32,7 @@ public sealed class AvaloniaChartExporter : IChartExporter
         _owner = owner;
         _snapshotter = snapshotter;
         _sizeProvider = sizeProvider;
+        _statsProvider = statsProvider;
     }
 
     public async Task<ChartExportResult> ExportPngAsync()
@@ -53,7 +56,7 @@ public sealed class AvaloniaChartExporter : IChartExporter
         try
         {
             var (w, h) = _sizeProvider();
-            _snapshotter.SaveAsPng(file.Path.LocalPath, w, h);
+            _snapshotter.SaveAsPng(file.Path.LocalPath, w, h, _statsProvider?.Invoke());
             return new ChartExportResult(ChartExportOutcome.Saved, FilePath: file.Path.LocalPath);
         }
         catch (Exception ex)

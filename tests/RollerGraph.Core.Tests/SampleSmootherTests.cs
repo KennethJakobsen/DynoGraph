@@ -18,15 +18,15 @@ public class SampleSmootherTests
     }
 
     [Fact]
-    public void Smooth_AveragesAcrossThreeChannelsIndependently()
+    public void Smooth_UsesTopHpAndNmWhileAveragingSpeed()
     {
         var sm = new SampleSmoother(3);
         sm.Smooth(S(1, 30, 60, 40));
-        sm.Smooth(S(2, 60, 90, 60));
-        var r = sm.Smooth(S(3, 90, 120, 80));
+        sm.Smooth(S(2, 60, 120, 80));
+        var r = sm.Smooth(S(3, 90, 90, 60));
         r.SpeedKmh.ShouldBe(60, 1e-9);
-        r.Nm.ShouldBe(90, 1e-9);
-        r.Hp.ShouldBe(60, 1e-9);
+        r.Nm.ShouldBe(120, 1e-9);
+        r.Hp.ShouldBe(80, 1e-9);
         r.SampleNumber.ShouldBe(3); // SampleNumber is preserved
     }
 

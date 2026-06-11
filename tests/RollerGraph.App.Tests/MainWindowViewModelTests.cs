@@ -123,10 +123,12 @@ public class MainWindowViewModelTests
         factory.LiveSource.EmitLine("1,30,60,400");
         var firstLog = vm.LogFilePath;
 
-        vm.ResetCommand.Execute(null);
+        await vm.ResetCommand.ExecuteAsync(null);
 
         vm.Chart.SampleCount.ShouldBe(0);
         vm.BadLineCount.ShouldBe(0);
+        factory.LiveSource.StopCount.ShouldBe(1);
+        factory.LiveSource.StartCount.ShouldBe(2);
         logger.SessionsStarted.ShouldBe(2);     // initial + after reset
         vm.LogFilePath.ShouldNotBe(firstLog);
     }
@@ -178,10 +180,36 @@ public class MainWindowViewModelTests
 
         vm.SmoothingEnabled = true;
         factory.LiveSource.EmitLine("1,30,60,10");   // hp 10
-        factory.LiveSource.EmitLine("2,30,60,30");   // hp 30
+        factory.LiveSource.EmitLine("2,30,90,30");   // hp 30
 
-        // With smoothing window 3, after 2 samples the average is (10+30)/2 = 20
+        // Smoothing changes the plotted curve, but peak numbers use raw adjusted measurements.
         vm.Chart.SampleCount.ShouldBe(2);
-        vm.Chart.PeakHp.ShouldBe(20);
+        vm.Chart.PeakHp.ShouldBe(30);
+        vm.Chart.PeakNm.ShouldBe(90);
+    }
+
+    [Fact]
+    public async Task SpeedRiseAfterStoppedRun_ClearsChartForNewMeasurement()
+    {
+        var vm = NewVm(out _, out var factory, out var logger, out _, out _);
+        vm.SelectedPort = "COM1";
+        await vm.ConnectCommand.ExecuteAsync(null);
+
+        factory.LiveSource.EmitLine("1,10,60,10");
+        factory.LiveSource.EmitLine("2,20,70,20");
+        factory.LiveSource.EmitLine("3,15,80,30"); // stop, not plotted
+
+        vm.Chart.SampleCount.ShouldBe(2);
+        vm.LogFilePath.ShouldBeNull();
+        vm.StatusMessage.ShouldContain("stopped");
+
+        factory.LiveSource.EmitLine("4,12,90,40"); // still stopped
+        factory.LiveSource.EmitLine("5,18,100,50"); // new run, chart reset first
+
+        vm.Chart.SampleCount.ShouldBe(1);
+        vm.Chart.PeakHp.ShouldBe(50);
+        vm.Chart.PeakNm.ShouldBe(100);
+        logger.SessionsStarted.ShouldBe(2);
+        vm.LogFilePath.ShouldNotBeNull();
     }
 }

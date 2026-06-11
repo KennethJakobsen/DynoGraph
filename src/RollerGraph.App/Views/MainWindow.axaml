@@ -11,6 +11,31 @@
         MinWidth="900" MinHeight="500"
         Title="RollerGraph">
 
+  <NativeMenu.Menu>
+    <NativeMenu>
+      <NativeMenuItem Header="Connection">
+        <NativeMenu>
+          <NativeMenuItem Header="Replay CSV..." Command="{Binding ReplayCsvCommand}"/>
+          <NativeMenuItemSeparator/>
+          <NativeMenuItem Header="Settings..." Command="{Binding OpenSettingsCommand}"/>
+        </NativeMenu>
+      </NativeMenuItem>
+      <NativeMenuItem Header="Run">
+        <NativeMenu>
+          <NativeMenuItem Header="Save Current Run" Command="{Binding SaveCurrentRunCommand}"/>
+          <NativeMenuItem Header="Load Run..." Command="{Binding LoadSavedRunCommand}"/>
+          <NativeMenuItem Header="Clear Saved Runs" Command="{Binding ClearSavedRunsCommand}"/>
+        </NativeMenu>
+      </NativeMenuItem>
+      <NativeMenuItem Header="Output">
+        <NativeMenu>
+          <NativeMenuItem Header="Print" Command="{Binding PrintCommand}"/>
+          <NativeMenuItem Header="Export PNG..." Command="{Binding ExportPngCommand}"/>
+        </NativeMenu>
+      </NativeMenuItem>
+    </NativeMenu>
+  </NativeMenu.Menu>
+
   <Window.KeyBindings>
     <KeyBinding Gesture="Escape" Command="{Binding ResetCommand}"/>
     <KeyBinding Gesture="Cmd+R" Command="{Binding ResetCommand}"/>
@@ -33,6 +58,24 @@
 
   <DockPanel LastChildFill="True">
 
+    <!-- Menu bar -->
+    <Menu Name="FallbackMenuBar" DockPanel.Dock="Top">
+      <MenuItem Header="_Connection">
+        <MenuItem Header="_Replay CSV..." Command="{Binding ReplayCsvCommand}"/>
+        <Separator/>
+        <MenuItem Header="_Settings..." Command="{Binding OpenSettingsCommand}"/>
+      </MenuItem>
+      <MenuItem Header="_Run">
+        <MenuItem Header="_Save Current Run" Command="{Binding SaveCurrentRunCommand}"/>
+        <MenuItem Header="_Load Run..." Command="{Binding LoadSavedRunCommand}"/>
+        <MenuItem Header="_Clear Saved Runs" Command="{Binding ClearSavedRunsCommand}"/>
+      </MenuItem>
+      <MenuItem Header="_Output">
+        <MenuItem Header="_Print" Command="{Binding PrintCommand}"/>
+        <MenuItem Header="_Export PNG..." Command="{Binding ExportPngCommand}"/>
+      </MenuItem>
+    </Menu>
+
     <!-- Toolbar -->
     <Border DockPanel.Dock="Top" Padding="10,8" BorderThickness="0,0,0,1"
             BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
@@ -41,23 +84,33 @@
         <ComboBox MinWidth="200"
                   ItemsSource="{Binding AvailablePorts}"
                   SelectedItem="{Binding SelectedPort}"/>
-        <Button Content="Refresh" Command="{Binding RefreshPortsCommand}"/>
-        <Button Content="Connect" Command="{Binding ConnectCommand}"/>
-        <Button Content="Disconnect" Command="{Binding DisconnectCommand}"/>
+        <Button Width="32" Height="32" Padding="6"
+                Command="{Binding RefreshPortsCommand}"
+                ToolTip.Tip="Refresh ports">
+          <PathIcon Width="16" Height="16"
+                    Data="M17.65,6.35A8,8 0,1 0,19.73 14H17.73A6,6 0,1 1,16.24 7.76L13,11H20V4Z"/>
+        </Button>
+        <Button Width="32" Height="32" Padding="6"
+                Command="{Binding ConnectCommand}"
+                ToolTip.Tip="Connect">
+          <PathIcon Width="16" Height="16"
+                    Data="M7,2H9V7H11V2H13V7H15V2H17V8C17,10.76 14.76,13 12,13C9.24,13 7,10.76 7,8V2M11,13H13V22H11V13Z"/>
+        </Button>
+        <Button Width="32" Height="32" Padding="6"
+                Command="{Binding DisconnectCommand}"
+                ToolTip.Tip="Disconnect">
+          <PathIcon Width="16" Height="16"
+                    Data="M3,4.27L4.28,3L21,19.72L19.73,21L15.76,17.03C14.96,17.63 14,18 13,18V22H11V18C8.24,18 6,15.76 6,13V10H8V13C8,14.66 9.34,16 11,16H13C13.43,16 13.84,15.91 14.21,15.75L11.46,13H10V11.54L8,9.54V10H6V7.54L3,4.27M16,10V13C16,13.34 15.94,13.67 15.83,13.97L14.14,12.28C14.05,11.86 13.83,11.5 13.54,11.22L10,7.68V2H12V7H14V2H16V7H18V2H20V8C20,8.73 19.84,9.42 19.55,10.04L17.92,8.41C17.98,8.28 18,8.14 18,8V10H16Z"/>
+        </Button>
         <Separator Width="12"/>
-        <Button Content="Reset" Command="{Binding ResetCommand}" ToolTip.Tip="Esc"/>
-        <Button Content="Replay CSV..." Command="{Binding ReplayCsvCommand}"/>
+        <Button Width="32" Height="32" Padding="6"
+                Command="{Binding ResetCommand}"
+                ToolTip.Tip="Reset (Esc)">
+          <PathIcon Width="16" Height="16"
+                    Data="M12,5V2L7,7L12,12V9C15.31,9 18,11.69 18,15C18,16.01 17.75,16.96 17.3,17.8L18.76,19.26C19.54,18.03 20,16.57 20,15C20,10.58 16.42,7 12,7V5M6.7,12.2L5.24,10.74C4.46,11.97 4,13.43 4,15C4,19.42 7.58,23 12,23V26L17,21L12,16V19C8.69,19 6,16.31 6,13C6,12.99 6,12.99 6,12.98C6.13,12.71 6.36,12.43 6.7,12.2Z"/>
+        </Button>
         <Separator Width="12"/>
         <CheckBox Content="Smoothing" IsChecked="{Binding SmoothingEnabled}"/>
-        <Separator Width="12"/>
-        <Button Content="Save Run" Command="{Binding SaveCurrentRunCommand}"
-                ToolTip.Tip="Cmd+B / Ctrl+B"/>
-        <Button Content="Load Run..." Command="{Binding LoadSavedRunCommand}"/>
-        <Separator Width="12"/>
-        <Button Content="Print" Command="{Binding PrintCommand}"/>
-        <Button Content="Export PNG..." Command="{Binding ExportPngCommand}"
-                IsEnabled="{Binding Chart.SampleCount, Converter={x:Static vm:IntToBoolConverter.Instance}}"/>
-        <Button Content="Settings..." Command="{Binding OpenSettingsCommand}"/>
       </StackPanel>
     </Border>
 
