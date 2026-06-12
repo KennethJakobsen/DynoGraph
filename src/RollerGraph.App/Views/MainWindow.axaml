@@ -173,13 +173,13 @@
             <StackPanel Spacing="2">
               <TextBlock Text="Peak NM" FontSize="11" Opacity="0.7"/>
               <StackPanel Orientation="Horizontal" Spacing="6">
-                <TextBlock Text="{Binding Chart.PeakNm, StringFormat='{}{0:F1}'}"
+                <TextBlock Text="{Binding Chart.PeakNm, StringFormat='{}{0:0.##}'}"
                            FontSize="26" FontWeight="Bold" Foreground="#00B8A9"/>
                 <TextBlock Text="NM" FontSize="13" VerticalAlignment="Bottom" Margin="0,0,0,4" Opacity="0.7"/>
               </StackPanel>
               <TextBlock FontSize="11" Opacity="0.6">
                 <Run Text="@ "/>
-                <Run Text="{Binding Chart.PeakNmSpeed, StringFormat='{}{0:F0}'}"/>
+                <Run Text="{Binding Chart.PeakNmSpeed, StringFormat='{}{0:0.##}'}"/>
                 <Run Text=" km/h"/>
               </TextBlock>
             </StackPanel>
@@ -189,7 +189,7 @@
             <StackPanel Spacing="2">
               <TextBlock Text="Peak Speed" FontSize="11" Opacity="0.7"/>
               <StackPanel Orientation="Horizontal" Spacing="6">
-                <TextBlock Text="{Binding Chart.PeakSpeed, StringFormat='{}{0:F1}'}"
+                <TextBlock Text="{Binding Chart.PeakSpeed, StringFormat='{}{0:0.##}'}"
                            FontSize="26" FontWeight="Bold"/>
                 <TextBlock Text="km/h" FontSize="13" VerticalAlignment="Bottom" Margin="0,0,0,4" Opacity="0.7"/>
               </StackPanel>
