@@ -183,13 +183,30 @@ dotnet build
 # Run the desktop app
 dotnet run --project src/RollerGraph.App
 
+# Build a macOS .app bundle with the RollerGraph meter icon
+build/package-macos.sh
+
+# Launch the macOS .app bundle
+open artifacts/RollerGraph.app
+
 # Run the unit tests
 dotnet test
 ```
 
+On macOS, launch `artifacts/RollerGraph.app` when checking the app icon or
+native application menu name. Running the raw executable directly from
+`Contents/MacOS/` can still show macOS's generic black `exec` icon because it
+bypasses the `.app` bundle metadata.
+
 ## Publishing self-contained binaries
 
 ```bash
+# macOS .app bundle (Apple Silicon by default)
+build/package-macos.sh
+
+# macOS .app bundle (Intel)
+build/package-macos.sh osx-x64
+
 # macOS (Apple Silicon)
 dotnet publish src/RollerGraph.App -c Release -r osx-arm64 --self-contained true
 
@@ -205,6 +222,13 @@ dotnet publish src/RollerGraph.App -c Release -r win-x64 --self-contained true
 
 The published output ends up under
 `src/RollerGraph.App/bin/Release/net10.0/<rid>/publish/`.
+
+The macOS packaging script writes self-contained publish output under
+`artifacts/publish/<rid>/` and creates `artifacts/RollerGraph.app` with:
+
+- `CFBundleName` / `CFBundleDisplayName` set to `RollerGraph`
+- `CFBundleIconFile` pointing at the bundled meter `.icns`
+- `Contents/MacOS/RollerGraph` as the app executable
 
 ---
 

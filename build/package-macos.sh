@@ -36,6 +36,8 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key>
   <string>RollerGraph</string>
   <key>CFBundleIconFile</key>
+  <string>rollergraph-icon.icns</string>
+  <key>CFBundleIconName</key>
   <string>rollergraph-icon</string>
   <key>CFBundleIdentifier</key>
   <string>app.rollergraph.RollerGraph</string>
