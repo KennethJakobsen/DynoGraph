@@ -18,6 +18,11 @@ namespace RollerGraph.App;
 /// </summary>
 public partial class App : Application
 {
+    public App()
+    {
+        Name = "RollerGraph";
+    }
+
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);

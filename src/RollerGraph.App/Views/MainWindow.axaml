@@ -9,6 +9,7 @@
         x:DataType="vm:MainWindowViewModel"
         Width="1280" Height="800"
         MinWidth="900" MinHeight="500"
+        Icon="/Assets/rollergraph-icon.png"
         Title="RollerGraph">
 
   <NativeMenu.Menu>
